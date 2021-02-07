@@ -1,7 +1,19 @@
 import numpy as np
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.datasets import fetch_lfw_people
+from sklearn.datasets import fetch_covtype
 
 
+# globals for the datasets
+diabetes_ds = []
+banknote_ds = []
+
+
+def data_ingest(dataile):
+    pass
+
+
+# noinspection PyPep8Naming
 def ada_boost_scratch(X, y, M=10, learning_rate=1):
     # Initialization of utility variables
     N = len(y)
@@ -45,8 +57,8 @@ def ada_boost_scratch(X, y, M=10, learning_rate=1):
     sample_weight_list = np.asarray(sample_weight_list)
 
     # Predictions
-    preds = (np.array([np.sign((y_predict_list[:, point] * estimator_weight_list).sum()) for point in range(N)]))
-    print('Accuracy = ', (preds == y).sum() / N)
+    predictions = (np.array([np.sign((y_predict_list[:, point] * estimator_weight_list).sum()) for point in range(N)]))
+    print('Accuracy = ', (predictions == y).sum() / N)
 
     return estimator_list, estimator_weight_list, sample_weight_list
 
@@ -59,3 +71,16 @@ if __name__ == '__main__':
     y = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1])
     X = np.vstack((x1, x2)).T
     ada_boost_scratch(X, y)
+    # init Labeled Faces in the Wild dataset
+    # reference:
+    # Labeled Faces in the Wild: A Database for Studying Face Recognition in Unconstrained Environments.
+    # Gary B. Huang, Manu Ramesh, Tamara Berg, and Erik Learned-Miller. University of Massachusetts, Amherst,
+    # Technical Report 07-49, October, 2007.
+    lfw_people = fetch_lfw_people(min_faces_per_person=70, resize=0.4)
+    # init Forest Cover Types dataset
+    # reference:
+    # Blackard, Jock A. and Denis J. Dean. 2000. "Comparative Accuracies of Artificial Neural Networks and
+    # Discriminant Analysis in Predicting Forest Cover Types from Cartographic Variables." Computers and
+    # Electronics in Agriculture 24(3):131-151.
+    covtype = fetch_covtype()
+    print("done")

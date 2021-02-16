@@ -2,10 +2,14 @@ import errno
 
 import numpy as np
 from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline
+from imblearn.under_sampling import RandomUnderSampler
 from sklearn import tree
+from sklearn.ensemble import AdaBoostClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import cross_validate, train_test_split
 from sklearn.model_selection import GridSearchCV
+from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.datasets import fetch_lfw_people
 from sklearn.datasets import fetch_covtype
@@ -30,7 +34,7 @@ def ada_boost_scratch(X, y, M=10, learning_rate=1):
     # For m = 1 to M
     for m in range(M):
         # Fit a classifier
-        estimator = DecisionTreeClassifier(max_depth=1, max_leaf_nodes=2)
+        estimator = DecisionTreeClassifier(max_depth=11, max_features=19, min_samples_split=3)
         estimator.fit(X, y, sample_weight=sample_weight)
         y_predict = estimator.predict(X)
 
@@ -87,15 +91,17 @@ def grid_search_cv_decision_tree_model(X_train, y_train) -> DecisionTreeClassifi
     return model
 
 
-if __name__ == '__main__':
-    # Toy Dataset
-    x1 = np.array([.1, .2, .4, .8, .8, .05, .08, .12, .33, .55, .66, .77, .88, .2, .3, .4, .5, .6, .25, .3, .5, .7, .6])
-    x2 = np.array(
-        [.2, .65, .7, .6, .3, .1, .4, .66, .77, .65, .68, .55, .44, .1, .3, .4, .3, .15, .15, .5, .55, .2, .4])
-    y = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1])
-    X = np.vstack((x1, x2)).T
-    # ada_boost_scratch(X, y)
+def grid_search_cv_svm_model(X_train, y_train):
+    param_grid = {'C': [1e3, 5e3, 1e4, 5e4, 1e5],
+                  'gamma': [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.1], }
+    model = GridSearchCV(
+        SVC(kernel='rbf', class_weight='balanced'), param_grid, cv=5, n_jobs=-1
+    )
+    model.fit(X_train, y_train)
+    return model
 
+
+if __name__ == '__main__':
     # init Labeled Faces in the Wild dataset
     # reference:
     # Labeled Faces in the Wild: A Database for Studying Face Recognition in Unconstrained Environments.
@@ -122,9 +128,13 @@ if __name__ == '__main__':
     X_train_transform_lfw_people = np.zeros_like(X_train_lfw_people)
     X_test_transform_lfw_people = np.zeros_like(X_test_lfw_people)
 
-    n_components = 150
+    n_components = 60
 
-    XFORM = 'LBP'
+    XFORM = 'JUST_PCA'
+    # ALG = 'DTREE'
+    # ALG = 'ADABOOST'
+    ALG = 'SVM'
+
     if XFORM.__contains__('None'):
         # do no transforms
         X_train_transform_lfw_people = X_train_lfw_people
@@ -145,6 +155,10 @@ if __name__ == '__main__':
         pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train_transform_lfw_people)
         X_train_transform_lfw_people = pca.transform(X_train_transform_lfw_people)
         X_test_transform_lfw_people = pca.transform(X_test_transform_lfw_people)
+    if XFORM.__contains__('JUST_PCA'):
+        pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train_lfw_people)
+        X_train_transform_lfw_people = pca.transform(X_train_lfw_people)
+        X_test_transform_lfw_people = pca.transform(X_test_lfw_people)
 
     # init Forest Cover Types dataset
     # reference:
@@ -156,17 +170,34 @@ if __name__ == '__main__':
     # FIXME cross_validate won't work as-is:
     # cv_results = cross_validate(ada_boost_scratch, X, y, cv=3)
 
+    if ALG == 'ADABOOST':
+        # adaboost on a good Decision Tree Set found via grid search
+        ada_model = AdaBoostClassifier(
+            base_estimator=DecisionTreeClassifier(criterion='entropy', max_depth=11, max_features=18), n_estimators=500)
+        ada_model.fit(X_train_transform_lfw_people, y_train_lfw_people)
+        ada_predict = ada_model.predict(X_test_transform_lfw_people)
+        print(classification_report(y_test_lfw_people, ada_predict, target_names=target_names))
+        print(confusion_matrix(y_test_lfw_people, ada_predict, labels=range(n_classes)))
+        exit(0)
+
+    if ALG == 'SVM':
+        svm_model = grid_search_cv_svm_model(X_train_transform_lfw_people, y_train_lfw_people)
+        svm_predict = svm_model.predict(X_test_transform_lfw_people)
+        print("Best SVM estimator found by grid search:")
+        print(svm_model.best_estimator_)
+        print(classification_report(y_test_lfw_people, svm_predict, target_names=target_names))
+        print(confusion_matrix(y_test_lfw_people, svm_predict, labels=range(n_classes)))
+
     # Decision trees plain with grid search on parameters and cross-validation
     dte_model = grid_search_cv_decision_tree_model(X_train_transform_lfw_people, y_train_lfw_people)
 
-    print("Best estimator found by grid search:")
+    print("Best DTree estimator found by grid search:")
     print(dte_model.best_estimator_)
-
     dte_predict = dte_model.predict(X_test_transform_lfw_people)
-
     print(classification_report(y_test_lfw_people, dte_predict, target_names=target_names))
     print(confusion_matrix(y_test_lfw_people, dte_predict, labels=range(n_classes)))
 
+    # make visualization for dtrees
     DTREE_VIZ_DIR = 'dtree_viz_images'
     try:
         os.makedirs(DTREE_VIZ_DIR)

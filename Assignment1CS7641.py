@@ -19,6 +19,7 @@ from subprocess import call
 from dtreeviz.trees import *
 import re
 import imblearn
+from sklearn.neural_network import MLPClassifier
 
 
 # noinspection PyPep8Naming
@@ -79,13 +80,6 @@ def grid_search_cv_decision_tree_model(X_train, y_train) -> DecisionTreeClassifi
                   'min_samples_leaf': np.arange(1, 7),
                   'max_features': np.arange(1, 20)
                   }
-    # just for dev speed, TODO: delete
-    # tree_param = {'criterion': ['entropy'],
-    #               'max_depth': [None],
-    #               'min_samples_split': [3],
-    #               'min_samples_leaf': [6],
-    #               'max_features': [11]
-    #               }
     model = GridSearchCV(dt_model, tree_param, cv=5, n_jobs=-1, error_score=0.0)
     model.fit(X_train, y_train)
     return model
@@ -103,10 +97,6 @@ def grid_search_cv_svm_model(X_train, y_train):
 
 if __name__ == '__main__':
     # init Labeled Faces in the Wild dataset
-    # reference:
-    # Labeled Faces in the Wild: A Database for Studying Face Recognition in Unconstrained Environments.
-    # Gary B. Huang, Manu Ramesh, Tamara Berg, and Erik Learned-Miller. University of Massachusetts, Amherst,
-    # Technical Report 07-49, October, 2007.
     lfw_people = fetch_lfw_people(min_faces_per_person=70, resize=0.4)
 
     n_samples, h, w = lfw_people.images.shape
@@ -133,7 +123,8 @@ if __name__ == '__main__':
     XFORM = 'JUST_PCA'
     # ALG = 'DTREE'
     # ALG = 'ADABOOST'
-    ALG = 'SVM'
+    # ALG = 'SVM'
+    ALG = 'NN'
 
     if XFORM.__contains__('None'):
         # do no transforms
@@ -161,10 +152,6 @@ if __name__ == '__main__':
         X_test_transform_lfw_people = pca.transform(X_test_lfw_people)
 
     # init Forest Cover Types dataset
-    # reference:
-    # Blackard, Jock A. and Denis J. Dean. 2000. "Comparative Accuracies of Artificial Neural Networks and
-    # Discriminant Analysis in Predicting Forest Cover Types from Cartographic Variables." Computers and
-    # Electronics in Agriculture 24(3):131-151.
     cov_type = fetch_covtype()
 
     # FIXME cross_validate won't work as-is:
@@ -187,6 +174,14 @@ if __name__ == '__main__':
         print(svm_model.best_estimator_)
         print(classification_report(y_test_lfw_people, svm_predict, target_names=target_names))
         print(confusion_matrix(y_test_lfw_people, svm_predict, labels=range(n_classes)))
+
+    if ALG == 'NN':
+        nn_model = MLPClassifier(solver='lbfgs', alpha=1e-5, max_iter=1000,
+                                 hidden_layer_sizes=(5, 2), random_state=1)
+        nn_model.fit(X_train_transform_lfw_people, y_train_lfw_people)
+        nn_predict = nn_model.predict(X_test_transform_lfw_people)
+        print(classification_report(y_test_lfw_people, nn_predict, target_names=target_names))
+        print(confusion_matrix(y_test_lfw_people, nn_predict, labels=range(n_classes)))
 
     # Decision trees plain with grid search on parameters and cross-validation
     dte_model = grid_search_cv_decision_tree_model(X_train_transform_lfw_people, y_train_lfw_people)

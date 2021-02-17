@@ -9,6 +9,7 @@ from sklearn.ensemble import AdaBoostClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import cross_validate, train_test_split
 from sklearn.model_selection import GridSearchCV
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.datasets import fetch_lfw_people
@@ -95,6 +96,32 @@ def grid_search_cv_svm_model(X_train, y_train):
     return model
 
 
+def grid_search_cv_nn_model(X_train, y_train):
+    mlp_gs = MLPClassifier(max_iter=250)
+    parameter_space = {
+        'hidden_layer_sizes': [(10, 30, 10), (20,)],
+        'activation': ['tanh', 'relu'],
+        'solver': ['sgd', 'adam'],
+        'alpha': [0.0001, 0.05],
+        'learning_rate': ['constant', 'adaptive'],
+    }
+    model = GridSearchCV(mlp_gs, parameter_space, n_jobs=-1, cv=5)
+    model.fit(X_train, y_train)
+    return model
+
+
+def grid_search_cv_knn_model(X_train, y_train):
+    nFolds = 4
+    random_state = 1234
+    metrics = ['minkowski', 'euclidean', 'manhattan']
+    weights = ['uniform', 'distance']  # 10.0**np.arange(-5,4)
+    numNeighbors = np.arange(5, 10)
+    param_grid = dict(metric=metrics, weights=weights, n_neighbors=numNeighbors)
+    cv = cross_validate.StratifiedKFold(y_train, nFolds)
+    model = GridSearchCV(KNeighborsClassifier(), param_grid=param_grid, cv=cv)
+    model.fit(X_train, y_train)
+    return model
+
 if __name__ == '__main__':
     # init Labeled Faces in the Wild dataset
     lfw_people = fetch_lfw_people(min_faces_per_person=70, resize=0.4)
@@ -124,7 +151,8 @@ if __name__ == '__main__':
     # ALG = 'DTREE'
     # ALG = 'ADABOOST'
     # ALG = 'SVM'
-    ALG = 'NN'
+    # ALG = 'NN'
+    ALG = 'KNN'
 
     if XFORM.__contains__('None'):
         # do no transforms
@@ -174,14 +202,16 @@ if __name__ == '__main__':
         print(svm_model.best_estimator_)
         print(classification_report(y_test_lfw_people, svm_predict, target_names=target_names))
         print(confusion_matrix(y_test_lfw_people, svm_predict, labels=range(n_classes)))
+        exit(0)
 
     if ALG == 'NN':
-        nn_model = MLPClassifier(solver='lbfgs', alpha=1e-5, max_iter=1000,
-                                 hidden_layer_sizes=(5, 2), random_state=1)
-        nn_model.fit(X_train_transform_lfw_people, y_train_lfw_people)
+        nn_model = grid_search_cv_nn_model(X_train_transform_lfw_people, y_train_lfw_people)
         nn_predict = nn_model.predict(X_test_transform_lfw_people)
+        print("Best NN estimator found by grid search:")
+        print(nn_model.best_estimator_)
         print(classification_report(y_test_lfw_people, nn_predict, target_names=target_names))
         print(confusion_matrix(y_test_lfw_people, nn_predict, labels=range(n_classes)))
+        exit(0)
 
     # Decision trees plain with grid search on parameters and cross-validation
     dte_model = grid_search_cv_decision_tree_model(X_train_transform_lfw_people, y_train_lfw_people)

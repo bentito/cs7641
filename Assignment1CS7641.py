@@ -111,116 +111,152 @@ def grid_search_cv_nn_model(X_train, y_train):
 
 
 def grid_search_cv_knn_model(X_train, y_train):
-    nFolds = 4
-    random_state = 1234
-    metrics = ['minkowski', 'euclidean', 'manhattan']
-    weights = ['uniform', 'distance']  # 10.0**np.arange(-5,4)
-    numNeighbors = np.arange(5, 10)
-    param_grid = dict(metric=metrics, weights=weights, n_neighbors=numNeighbors)
-    cv = cross_validate.StratifiedKFold(y_train, nFolds)
-    model = GridSearchCV(KNeighborsClassifier(), param_grid=param_grid, cv=cv)
+    pipe = Pipeline([
+        ('sc', StandardScaler()),
+        ('knn', KNeighborsClassifier(algorithm='auto'))
+    ])
+    params = {
+        'knn__n_neighbors': [1, 3, 5, 7, 9, 11],
+        'knn__weights': ['uniform', 'distance']
+    }
+    model = GridSearchCV(pipe, param_grid=params, n_jobs=-1, cv=5)
     model.fit(X_train, y_train)
     return model
 
+
 if __name__ == '__main__':
-    # init Labeled Faces in the Wild dataset
-    lfw_people = fetch_lfw_people(min_faces_per_person=70, resize=0.4)
+    DATA_SET = "forest"
+    # DATA_SET = "faces"
 
-    n_samples, h, w = lfw_people.images.shape
+    if DATA_SET == 'faces':
+        # init Labeled Faces in the Wild dataset
+        data_set = fetch_lfw_people(min_faces_per_person=70, resize=0.4)
+    if DATA_SET == 'forest':
+        # init Forest Cover Types dataset
+        data_set = fetch_covtype()
 
-    X_lfw_people = lfw_people.data
-    y_lfw_people = lfw_people.target
+    if DATA_SET == 'faces':
+        _, h, w = data_set.images.shape
 
-    # This is not a balanced set, at all so generate synthetic samples to make up class deficiencies
-    oversample = SMOTE()
-    X_lfw_people, y_lfw_people = oversample.fit_resample(X_lfw_people, y_lfw_people)
+    X = data_set.data
+    y = data_set.target
 
-    n_features = X_lfw_people.shape[1]
-    target_names = lfw_people.target_names
-    n_classes = target_names.shape[0]
+    if DATA_SET == 'faces':
+        # LFW is not a balanced set, at all. So generate synthetic samples to make up minority class deficiencies
+        oversample = SMOTE()
+        X, y = oversample.fit_resample(X, y)
 
-    X_train_lfw_people, X_test_lfw_people, y_train_lfw_people, y_test_lfw_people = \
-        train_test_split(X_lfw_people, y_lfw_people, random_state=1)
+    if DATA_SET == 'faces':
+        n_features = X.shape[1]
+        target_names = data_set.target_names
+        n_classes = target_names.shape[0]
+    if DATA_SET == 'forest':
+        n_features = X.shape[1]
+        target_names = data_set.target_names
+        n_classes = len(target_names)
 
-    X_train_transform_lfw_people = np.zeros_like(X_train_lfw_people)
-    X_test_transform_lfw_people = np.zeros_like(X_test_lfw_people)
+    if DATA_SET == 'faces':
+        X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=1)
+    if DATA_SET == 'forest':
+        X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=3000, test_size=1000, random_state=1)
 
-    n_components = 60
+    X_train_transform = np.zeros_like(X_train)
+    X_test_transform = np.zeros_like(X_test)
 
-    XFORM = 'JUST_PCA'
+    if DATA_SET == 'faces':
+        n_components = 60
+    if DATA_SET == 'forest':
+        n_components = 50
+
+    # XFORM = 'JUST_P_CA'
+    # XFORM = 'SS'
+    XFORM = 'None'
+
     # ALG = 'DTREE'
     # ALG = 'ADABOOST'
-    # ALG = 'SVM'
+    ALG = 'SVM'
     # ALG = 'NN'
-    ALG = 'KNN'
+    # ALG = 'KNN'
 
     if XFORM.__contains__('None'):
         # do no transforms
-        X_train_transform_lfw_people = X_train_lfw_people
-        X_test_transform_lfw_people = X_test_lfw_people
+        X_train_transform = X_train
+        X_test_transform = X_test
     if XFORM.__contains__('SS'):
         ss = StandardScaler()
-        X_train_transform_lfw_people = ss.fit_transform(X_train_lfw_people)
-        X_test_transform_lfw_people = ss.fit_transform(X_test_lfw_people)
+        X_train_transform = ss.fit_transform(X_train)
+        X_test_transform = ss.fit_transform(X_test)
     if XFORM.__contains__('LBP'):
         # try LBP manually
         from skimage.feature import local_binary_pattern
 
-        for i, image in enumerate(X_train_lfw_people):
-            X_train_transform_lfw_people[i] = np.ravel(local_binary_pattern(np.reshape(image, (h, w)), 24, 3))
-        for i, image in enumerate(X_test_lfw_people):
-            X_test_transform_lfw_people[i] = np.ravel(local_binary_pattern(np.reshape(image, (h, w)), 24, 3))
+        for i, image in enumerate(X_train):
+            X_train_transform[i] = np.ravel(local_binary_pattern(np.reshape(image, (h, w)), 24, 3))
+        for i, image in enumerate(X_test):
+            X_test_transform[i] = np.ravel(local_binary_pattern(np.reshape(image, (h, w)), 24, 3))
     if XFORM.__contains__('PCA'):
-        pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train_transform_lfw_people)
-        X_train_transform_lfw_people = pca.transform(X_train_transform_lfw_people)
-        X_test_transform_lfw_people = pca.transform(X_test_transform_lfw_people)
-    if XFORM.__contains__('JUST_PCA'):
-        pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train_lfw_people)
-        X_train_transform_lfw_people = pca.transform(X_train_lfw_people)
-        X_test_transform_lfw_people = pca.transform(X_test_lfw_people)
-
-    # init Forest Cover Types dataset
-    cov_type = fetch_covtype()
-
-    # FIXME cross_validate won't work as-is:
-    # cv_results = cross_validate(ada_boost_scratch, X, y, cv=3)
+        pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train_transform)
+        X_train_transform = pca.transform(X_train_transform)
+        X_test_transform = pca.transform(X_test_transform)
+    if XFORM.__contains__('JUST_P_CA'):
+        pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train)
+        X_train_transform = pca.transform(X_train)
+        X_test_transform = pca.transform(X_test)
 
     if ALG == 'ADABOOST':
         # adaboost on a good Decision Tree Set found via grid search
         ada_model = AdaBoostClassifier(
             base_estimator=DecisionTreeClassifier(criterion='entropy', max_depth=11, max_features=18), n_estimators=500)
-        ada_model.fit(X_train_transform_lfw_people, y_train_lfw_people)
-        ada_predict = ada_model.predict(X_test_transform_lfw_people)
-        print(classification_report(y_test_lfw_people, ada_predict, target_names=target_names))
-        print(confusion_matrix(y_test_lfw_people, ada_predict, labels=range(n_classes)))
+        ada_model.fit(X_train_transform, y_train)
+        ada_predict = ada_model.predict(X_test_transform)
+        print(classification_report(y_test, ada_predict, target_names=target_names))
+        print(confusion_matrix(y_test, ada_predict, labels=range(n_classes)))
         exit(0)
 
     if ALG == 'SVM':
-        svm_model = grid_search_cv_svm_model(X_train_transform_lfw_people, y_train_lfw_people)
-        svm_predict = svm_model.predict(X_test_transform_lfw_people)
+        svm_model = grid_search_cv_svm_model(X_train_transform, y_train)
+        svm_predict = svm_model.predict(X_test_transform)
         print("Best SVM estimator found by grid search:")
         print(svm_model.best_estimator_)
-        print(classification_report(y_test_lfw_people, svm_predict, target_names=target_names))
-        print(confusion_matrix(y_test_lfw_people, svm_predict, labels=range(n_classes)))
+        if DATA_SET == 'faces':
+            print(classification_report(y_test, svm_predict, target_names=target_names))
+        if DATA_SET == 'forest':
+            print(classification_report(y_test, svm_predict, labels=range(n_classes)))
+        print(confusion_matrix(y_test, svm_predict, labels=range(n_classes)))
         exit(0)
 
     if ALG == 'NN':
-        nn_model = grid_search_cv_nn_model(X_train_transform_lfw_people, y_train_lfw_people)
-        nn_predict = nn_model.predict(X_test_transform_lfw_people)
+        nn_model = grid_search_cv_nn_model(X_train_transform, y_train)
+        nn_predict = nn_model.predict(X_test_transform)
         print("Best NN estimator found by grid search:")
         print(nn_model.best_estimator_)
-        print(classification_report(y_test_lfw_people, nn_predict, target_names=target_names))
-        print(confusion_matrix(y_test_lfw_people, nn_predict, labels=range(n_classes)))
+        print(classification_report(y_test, nn_predict, target_names=target_names))
+        print(confusion_matrix(y_test, nn_predict, labels=range(n_classes)))
+        exit(0)
+
+    if ALG == 'KNN':
+        knn_model = grid_search_cv_knn_model(X_train_transform, y_train)
+        knn_predict = knn_model.predict(X_test_transform)
+        print("Best KNN estimator found by grid search:")
+        print(knn_model.best_estimator_)
+        if DATA_SET == 'faces':
+            print(classification_report(y_test, knn_predict, target_names=target_names))
+        if DATA_SET == 'forest':
+            print(classification_report(y_test, knn_predict, labels=range(n_classes)))
+        print(confusion_matrix(y_test, knn_predict, labels=range(n_classes)))
         exit(0)
 
     # Decision trees plain with grid search on parameters and cross-validation
-    dte_model = grid_search_cv_decision_tree_model(X_train_transform_lfw_people, y_train_lfw_people)
+    dte_model = grid_search_cv_decision_tree_model(X_train_transform, y_train)
 
     print("Best DTree estimator found by grid search:")
     print(dte_model.best_estimator_)
-    dte_predict = dte_model.predict(X_test_transform_lfw_people)
-    print(classification_report(y_test_lfw_people, dte_predict, target_names=target_names))
-    print(confusion_matrix(y_test_lfw_people, dte_predict, labels=range(n_classes)))
+    dte_predict = dte_model.predict(X_test_transform)
+    if DATA_SET == 'faces':
+        print(classification_report(y_test, dte_predict, target_names=target_names))
+    if DATA_SET == 'forest':
+        print(classification_report(y_test, dte_predict, labels=range(n_classes)))
+    print(confusion_matrix(y_test, dte_predict, labels=range(n_classes)))
 
     # make visualization for dtrees
     DTREE_VIZ_DIR = 'dtree_viz_images'
@@ -238,10 +274,10 @@ if __name__ == '__main__':
                                       str(n_components)) + '.svg'
 
     viz = dtreeviz(dte_model.best_estimator_,
-                   x_data=X_train_transform_lfw_people,
-                   y_data=y_train_lfw_people,
+                   x_data=X_train_transform,
+                   y_data=y_train,
                    target_name='class',
-                   feature_names=X_lfw_people[1],
+                   feature_names=X[1],
                    class_names=list(target_names),
                    title="Decision Tree - Labeled Faces in the Wild data set")
     svg_filename = viz.save_svg()

@@ -49,7 +49,7 @@ def grid_search_cv_svm_model(X_train, y_train, DATA_SET):
 
 
 def grid_search_cv_nn_model(X_train, y_train):
-    mlp_gs = MLPClassifier(max_iter=250)
+    mlp_gs = MLPClassifier(max_iter=500)
     parameter_space = {
         'hidden_layer_sizes': [(10, 30, 10), (20,)],
         'activation': ['tanh', 'relu'],
@@ -132,14 +132,15 @@ if __name__ == '__main__':
         n_components = 50
 
     # XFORM = 'JUST_P_CA'
+    # XFORM = 'SS+PCA'
     # XFORM = 'SS'
     # XFORM = 'None'
     XFORM = 'MINMAX'
 
     # ALG = 'DTREE'
-    ALG = 'ADABOOST'
+    # ALG = 'ADABOOST'
     # ALG = 'SVM'
-    # ALG = 'NN'
+    ALG = 'NN'
     # ALG = 'KNN'
 
     if XFORM.__contains__('None'):

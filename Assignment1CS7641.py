@@ -1,10 +1,9 @@
 import errno
+import time
 
 import numpy as np
 from imblearn.over_sampling import SMOTE
-from imblearn.pipeline import Pipeline
-from imblearn.under_sampling import RandomUnderSampler
-from sklearn import tree
+from imblearn.pipeline import Pipeline, make_pipeline
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import cross_validate, train_test_split
@@ -15,11 +14,12 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.datasets import fetch_lfw_people
 from sklearn.datasets import fetch_covtype
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-from subprocess import call
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, Normalizer
 from dtreeviz.trees import *
 import re
-import imblearn
+from numpy import save
+from numpy import load
+import pathlib
 from sklearn.neural_network import MLPClassifier
 
 
@@ -86,12 +86,14 @@ def grid_search_cv_decision_tree_model(X_train, y_train) -> DecisionTreeClassifi
     return model
 
 
-def grid_search_cv_svm_model(X_train, y_train):
-    param_grid = {'C': [1e3, 5e3, 1e4, 5e4, 1e5],
-                  'gamma': [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.1], }
-    model = GridSearchCV(
-        SVC(kernel='rbf', class_weight='balanced'), param_grid, cv=5, n_jobs=-1
-    )
+def grid_search_cv_svm_model(X_train, y_train, DATA_SET):
+    if DATA_SET == 'faces':
+        param_grid = {'C': [1e3, 5e3, 1e4, 5e4, 1e5],
+                      'gamma': [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.1], }
+        model = GridSearchCV(SVC(kernel='rbf', class_weight='balanced'), param_grid, cv=5, n_jobs=-1)
+    if DATA_SET == 'forest':
+        param_grid = {'kernel': ['linear']}
+        model = GridSearchCV(SVC(), param_grid, cv=5, n_jobs=-1)
     model.fit(X_train, y_train)
     return model
 
@@ -141,10 +143,21 @@ if __name__ == '__main__':
     X = data_set.data
     y = data_set.target
 
+    # Both cov_type & LFW are not balanced sets, at all.
+    # So generate synthetic samples to make up minority class deficiencies
     if DATA_SET == 'faces':
-        # LFW is not a balanced set, at all. So generate synthetic samples to make up minority class deficiencies
         oversample = SMOTE()
         X, y = oversample.fit_resample(X, y)
+    if DATA_SET == 'forest':
+        file = pathlib.Path("forest_X_smoted.npy")
+        if file.exists():
+            X = load('forest_X_smoted.npy')
+            y = load('forest_y_smoted.npy')
+        else:
+            oversample = SMOTE()
+            X, y = oversample.fit_resample(X, y)
+            save('forest_X_smoted.npy', X)
+            save('forest_y_smoted', y)
 
     if DATA_SET == 'faces':
         n_features = X.shape[1]
@@ -156,9 +169,9 @@ if __name__ == '__main__':
         n_classes = len(target_names)
 
     if DATA_SET == 'faces':
-        X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=1)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
     if DATA_SET == 'forest':
-        X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=3000, test_size=1000, random_state=1)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=5000, test_size=10000, random_state=1)
 
     X_train_transform = np.zeros_like(X_train)
     X_test_transform = np.zeros_like(X_test)
@@ -170,7 +183,8 @@ if __name__ == '__main__':
 
     # XFORM = 'JUST_P_CA'
     # XFORM = 'SS'
-    XFORM = 'None'
+    # XFORM = 'None'
+    XFORM = 'MINMAX'
 
     # ALG = 'DTREE'
     # ALG = 'ADABOOST'
@@ -202,6 +216,10 @@ if __name__ == '__main__':
         pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train)
         X_train_transform = pca.transform(X_train)
         X_test_transform = pca.transform(X_test)
+    if XFORM.__contains__('MINMAX'):
+        mm = make_pipeline(MinMaxScaler(), Normalizer())
+        X_train_transform = mm.fit_transform(X_train)
+        X_test_transform = mm.transform(X_test)
 
     if ALG == 'ADABOOST':
         # adaboost on a good Decision Tree Set found via grid search
@@ -214,15 +232,15 @@ if __name__ == '__main__':
         exit(0)
 
     if ALG == 'SVM':
-        svm_model = grid_search_cv_svm_model(X_train_transform, y_train)
+        svm_model = grid_search_cv_svm_model(X_train_transform, y_train, DATA_SET)
         svm_predict = svm_model.predict(X_test_transform)
         print("Best SVM estimator found by grid search:")
         print(svm_model.best_estimator_)
         if DATA_SET == 'faces':
             print(classification_report(y_test, svm_predict, target_names=target_names))
         if DATA_SET == 'forest':
-            print(classification_report(y_test, svm_predict, labels=range(n_classes)))
-        print(confusion_matrix(y_test, svm_predict, labels=range(n_classes)))
+            print(classification_report(y_test, svm_predict))
+        print(confusion_matrix(y_test, svm_predict))
         exit(0)
 
     if ALG == 'NN':

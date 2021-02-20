@@ -23,56 +23,6 @@ import pathlib
 from sklearn.neural_network import MLPClassifier
 
 
-# noinspection PyPep8Naming
-def ada_boost_scratch(X, y, M=10, learning_rate=1):
-    # Initialization of utility variables
-    N = len(y)
-    estimator_list, y_predict_list, estimator_error_list, estimator_weight_list, sample_weight_list = [], [], [], [], []
-
-    # Initialize the sample weights
-    sample_weight = np.ones(N) / N
-    sample_weight_list.append(sample_weight.copy())
-
-    # For m = 1 to M
-    for m in range(M):
-        # Fit a classifier
-        estimator = DecisionTreeClassifier(max_depth=11, max_features=19, min_samples_split=3)
-        estimator.fit(X, y, sample_weight=sample_weight)
-        y_predict = estimator.predict(X)
-
-        # Misclassifications
-        incorrect = (y_predict != y)
-
-        # Estimator error
-        estimator_error = np.mean(np.average(incorrect, weights=sample_weight, axis=0))
-
-        # Boost estimator weights
-        estimator_weight = learning_rate * np.log((1. - estimator_error) / estimator_error)
-
-        # Boost sample weights
-        sample_weight *= np.exp(estimator_weight * incorrect * ((sample_weight > 0) | (estimator_weight < 0)))
-
-        # Save iteration values
-        estimator_list.append(estimator)
-        y_predict_list.append(y_predict.copy())
-        estimator_error_list.append(estimator_error.copy())
-        estimator_weight_list.append(estimator_weight.copy())
-        sample_weight_list.append(sample_weight.copy())
-
-    # Convert to np array for convenience
-    estimator_list = np.asarray(estimator_list)
-    y_predict_list = np.asarray(y_predict_list)
-    estimator_error_list = np.asarray(estimator_error_list)
-    estimator_weight_list = np.asarray(estimator_weight_list)
-    sample_weight_list = np.asarray(sample_weight_list)
-
-    # Predictions
-    predictions = (np.array([np.sign((y_predict_list[:, point] * estimator_weight_list).sum()) for point in range(N)]))
-    print('Accuracy = ', (predictions == y).sum() / N)
-
-    return estimator_list, estimator_weight_list, sample_weight_list
-
-
 def grid_search_cv_decision_tree_model(X_train, y_train) -> DecisionTreeClassifier:
     dt_model = DecisionTreeClassifier()
     tree_param = {'criterion': ('gini', 'entropy'),
@@ -187,8 +137,8 @@ if __name__ == '__main__':
     XFORM = 'MINMAX'
 
     # ALG = 'DTREE'
-    # ALG = 'ADABOOST'
-    ALG = 'SVM'
+    ALG = 'ADABOOST'
+    # ALG = 'SVM'
     # ALG = 'NN'
     # ALG = 'KNN'
 
@@ -223,12 +173,22 @@ if __name__ == '__main__':
 
     if ALG == 'ADABOOST':
         # adaboost on a good Decision Tree Set found via grid search
-        ada_model = AdaBoostClassifier(
-            base_estimator=DecisionTreeClassifier(criterion='entropy', max_depth=11, max_features=18), n_estimators=500)
+        if DATA_SET == 'faces':
+            ada_model = AdaBoostClassifier(
+                base_estimator=DecisionTreeClassifier(criterion='entropy', max_depth=11, max_features=18),
+                n_estimators=500)
+        if DATA_SET == 'forest':
+            ada_model = AdaBoostClassifier(
+                base_estimator=DecisionTreeClassifier(criterion='entropy', max_depth=11, max_features=19,
+                                                      min_samples_split=5), n_estimators=500)
         ada_model.fit(X_train_transform, y_train)
         ada_predict = ada_model.predict(X_test_transform)
-        print(classification_report(y_test, ada_predict, target_names=target_names))
-        print(confusion_matrix(y_test, ada_predict, labels=range(n_classes)))
+        if DATA_SET == 'faces':
+            print(classification_report(y_test, ada_predict, target_names=target_names))
+            print(confusion_matrix(y_test, ada_predict, labels=range(n_classes)))
+        if DATA_SET == 'forest':
+            print(classification_report(y_test, ada_predict))
+            print(confusion_matrix(y_test, ada_predict))
         exit(0)
 
     if ALG == 'SVM':
@@ -238,9 +198,10 @@ if __name__ == '__main__':
         print(svm_model.best_estimator_)
         if DATA_SET == 'faces':
             print(classification_report(y_test, svm_predict, target_names=target_names))
+            print(confusion_matrix(y_test, svm_predict, labels=range(n_classes)))
         if DATA_SET == 'forest':
             print(classification_report(y_test, svm_predict))
-        print(confusion_matrix(y_test, svm_predict))
+            print(confusion_matrix(y_test, svm_predict))
         exit(0)
 
     if ALG == 'NN':
@@ -248,8 +209,12 @@ if __name__ == '__main__':
         nn_predict = nn_model.predict(X_test_transform)
         print("Best NN estimator found by grid search:")
         print(nn_model.best_estimator_)
-        print(classification_report(y_test, nn_predict, target_names=target_names))
-        print(confusion_matrix(y_test, nn_predict, labels=range(n_classes)))
+        if DATA_SET == 'faces':
+            print(classification_report(y_test, nn_predict, target_names=target_names))
+            print(confusion_matrix(y_test, nn_predict, labels=range(n_classes)))
+        if DATA_SET == 'forest':
+            print(classification_report(y_test, nn_predict))
+            print(confusion_matrix(y_test, nn_predict))
         exit(0)
 
     if ALG == 'KNN':
@@ -259,22 +224,23 @@ if __name__ == '__main__':
         print(knn_model.best_estimator_)
         if DATA_SET == 'faces':
             print(classification_report(y_test, knn_predict, target_names=target_names))
+            print(confusion_matrix(y_test, knn_predict, labels=range(n_classes)))
         if DATA_SET == 'forest':
-            print(classification_report(y_test, knn_predict, labels=range(n_classes)))
-        print(confusion_matrix(y_test, knn_predict, labels=range(n_classes)))
+            print(classification_report(y_test, knn_predict))
+            print(confusion_matrix(y_test, knn_predict))
         exit(0)
 
     # Decision trees plain with grid search on parameters and cross-validation
     dte_model = grid_search_cv_decision_tree_model(X_train_transform, y_train)
-
     print("Best DTree estimator found by grid search:")
     print(dte_model.best_estimator_)
     dte_predict = dte_model.predict(X_test_transform)
     if DATA_SET == 'faces':
         print(classification_report(y_test, dte_predict, target_names=target_names))
+        print(confusion_matrix(y_test, dte_predict, labels=range(n_classes)))
     if DATA_SET == 'forest':
-        print(classification_report(y_test, dte_predict, labels=range(n_classes)))
-    print(confusion_matrix(y_test, dte_predict, labels=range(n_classes)))
+        print(classification_report(y_test, dte_predict))
+        print(confusion_matrix(y_test, dte_predict))
 
     # make visualization for dtrees
     DTREE_VIZ_DIR = 'dtree_viz_images'
@@ -283,21 +249,30 @@ if __name__ == '__main__':
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise
-    new_dtree_viz_path = os.path.join(DTREE_VIZ_DIR, XFORM + re.sub('\s+', '_', str(dte_model.best_estimator_).
-                                                                    replace('(', '_').
-                                                                    replace(')', '_').
-                                                                    replace("'", '').
-                                                                    replace("\n", '').
-                                                                    replace(',', '')) +
+    new_dtree_viz_path = os.path.join(DTREE_VIZ_DIR, DATA_SET + "_" + XFORM + "_" +
+                                      re.sub('\s+', '_', str(dte_model.best_estimator_).
+                                             replace('(', '_').
+                                             replace(')', '_').
+                                             replace("'", '').
+                                             replace("\n", '').
+                                             replace(',', '')) +
                                       str(n_components)) + '.svg'
-
-    viz = dtreeviz(dte_model.best_estimator_,
-                   x_data=X_train_transform,
-                   y_data=y_train,
-                   target_name='class',
-                   feature_names=X[1],
-                   class_names=list(target_names),
-                   title="Decision Tree - Labeled Faces in the Wild data set")
+    if DATA_SET == 'faces':
+        viz = dtreeviz(dte_model.best_estimator_,
+                       x_data=X_train_transform,
+                       y_data=y_train,
+                       target_name='class',
+                       feature_names=X[1],
+                       class_names=list(target_names),
+                       title="Decision Tree - Labeled Faces in the Wild data set")
+    if DATA_SET == 'forest':
+        viz = dtreeviz(dte_model.best_estimator_,
+                       x_data=X_train_transform,
+                       y_data=y_train,
+                       target_name='class',
+                       feature_names=X[1],
+                       class_names=np.unique(y).tolist(),
+                       title="Decision Tree - Forest Cover Types data set")
     svg_filename = viz.save_svg()
 
     curr_viz_file_path = Path(svg_filename).rename(new_dtree_viz_path)

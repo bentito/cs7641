@@ -6,7 +6,7 @@ from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import Pipeline, make_pipeline
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from sklearn.model_selection import cross_validate, train_test_split
+from sklearn.model_selection import cross_validate, train_test_split, learning_curve, ShuffleSplit
 from sklearn.model_selection import GridSearchCV
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
@@ -76,6 +76,122 @@ def grid_search_cv_knn_model(X_train, y_train):
     return model
 
 
+def plot_learning_curve(estimator, title, X, y, axes=None, ylim=None, cv=None,
+                        n_jobs=None, train_sizes=np.linspace(.1, 1.0, 5)):
+    """
+    Generate 3 plots: the test and training learning curve, the training
+    samples vs fit times curve, the fit times vs score curve.
+
+    Parameters
+    ----------
+    estimator : estimator instance
+        An estimator instance implementing `fit` and `predict` methods which
+        will be cloned for each validation.
+
+    title : str
+        Title for the chart.
+
+    X : array-like of shape (n_samples, n_features)
+        Training vector, where ``n_samples`` is the number of samples and
+        ``n_features`` is the number of features.
+
+    y : array-like of shape (n_samples) or (n_samples, n_features)
+        Target relative to ``X`` for classification or regression;
+        None for unsupervised learning.
+
+    axes : array-like of shape (3,), default=None
+        Axes to use for plotting the curves.
+
+    ylim : tuple of shape (2,), default=None
+        Defines minimum and maximum y-values plotted, e.g. (ymin, ymax).
+
+    cv : int, cross-validation generator or an iterable, default=None
+        Determines the cross-validation splitting strategy.
+        Possible inputs for cv are:
+
+          - None, to use the default 5-fold cross-validation,
+          - integer, to specify the number of folds.
+          - :term:`CV splitter`,
+          - An iterable yielding (train, test) splits as arrays of indices.
+
+        For integer/None inputs, if ``y`` is binary or multiclass,
+        :class:`StratifiedKFold` used. If the estimator is not a classifier
+        or if ``y`` is neither binary nor multiclass, :class:`KFold` is used.
+
+        Refer :ref:`User Guide <cross_validation>` for the various
+        cross-validators that can be used here.
+
+    n_jobs : int or None, default=None
+        Number of jobs to run in parallel.
+        ``None`` means 1 unless in a :obj:`joblib.parallel_backend` context.
+        ``-1`` means using all processors. See :term:`Glossary <n_jobs>`
+        for more details.
+
+    train_sizes : array-like of shape (n_ticks,)
+        Relative or absolute numbers of training examples that will be used to
+        generate the learning curve. If the ``dtype`` is float, it is regarded
+        as a fraction of the maximum size of the training set (that is
+        determined by the selected validation method), i.e. it has to be within
+        (0, 1]. Otherwise it is interpreted as absolute sizes of the training
+        sets. Note that for classification the number of samples usually have
+        to be big enough to contain at least one sample from each class.
+        (default: np.linspace(0.1, 1.0, 5))
+    """
+    if axes is None:
+        _, axes = plt.subplots(1, 3, figsize=(20, 5))
+
+    axes[0].set_title(title)
+    if ylim is not None:
+        axes[0].set_ylim(*ylim)
+    axes[0].set_xlabel("Training examples")
+    axes[0].set_ylabel("Score")
+
+    train_sizes, train_scores, test_scores, fit_times, _ = \
+        learning_curve(estimator, X, y, cv=cv, n_jobs=n_jobs,
+                       train_sizes=train_sizes,
+                       return_times=True)
+    train_scores_mean = np.mean(train_scores, axis=1)
+    train_scores_std = np.std(train_scores, axis=1)
+    test_scores_mean = np.mean(test_scores, axis=1)
+    test_scores_std = np.std(test_scores, axis=1)
+    fit_times_mean = np.mean(fit_times, axis=1)
+    fit_times_std = np.std(fit_times, axis=1)
+
+    # Plot learning curve
+    axes[0].grid()
+    axes[0].fill_between(train_sizes, train_scores_mean - train_scores_std,
+                         train_scores_mean + train_scores_std, alpha=0.1,
+                         color="r")
+    axes[0].fill_between(train_sizes, test_scores_mean - test_scores_std,
+                         test_scores_mean + test_scores_std, alpha=0.1,
+                         color="g")
+    axes[0].plot(train_sizes, train_scores_mean, 'o-', color="r",
+                 label="Training score")
+    axes[0].plot(train_sizes, test_scores_mean, 'o-', color="g",
+                 label="Cross-validation score")
+    axes[0].legend(loc="best")
+
+    # Plot n_samples vs fit_times
+    axes[1].grid()
+    axes[1].plot(train_sizes, fit_times_mean, 'o-')
+    axes[1].fill_between(train_sizes, fit_times_mean - fit_times_std,
+                         fit_times_mean + fit_times_std, alpha=0.1)
+    axes[1].set_xlabel("Training examples")
+    axes[1].set_ylabel("fit_times")
+    axes[1].set_title("Scalability of the model")
+
+    # Plot fit_time vs score
+    axes[2].grid()
+    axes[2].plot(fit_times_mean, test_scores_mean, 'o-')
+    axes[2].fill_between(fit_times_mean, test_scores_mean - test_scores_std,
+                         test_scores_mean + test_scores_std, alpha=0.1)
+    axes[2].set_xlabel("fit_times")
+    axes[2].set_ylabel("Score")
+    axes[2].set_title("Performance of the model")
+
+    return plt
+
+
 if __name__ == '__main__':
     DATA_SET = "forest"
     # DATA_SET = "faces"
@@ -131,17 +247,19 @@ if __name__ == '__main__':
     if DATA_SET == 'forest':
         n_components = 50
 
-    # XFORM = 'JUST_P_CA'
+    XFORM = 'JUST_P_CA'
     # XFORM = 'SS+PCA'
     # XFORM = 'SS'
     # XFORM = 'None'
-    XFORM = 'MINMAX'
+    # XFORM = 'MINMAX'
 
-    # ALG = 'DTREE'
+    ALG = 'DTREE'
     # ALG = 'ADABOOST'
     # ALG = 'SVM'
-    ALG = 'NN'
-    # ALG = 'KNN'
+    # ALG = 'NN'
+    # ALG = 'K_NN'
+
+    DO_LEARNING_CURVES = True
 
     if XFORM.__contains__('None'):
         # do no transforms
@@ -172,7 +290,7 @@ if __name__ == '__main__':
         X_train_transform = mm.fit_transform(X_train)
         X_test_transform = mm.transform(X_test)
 
-    if ALG == 'ADABOOST':
+    if ALG.__contains__('ADABOOST'):
         # adaboost on a good Decision Tree Set found via grid search
         if DATA_SET == 'faces':
             ada_model = AdaBoostClassifier(
@@ -190,9 +308,8 @@ if __name__ == '__main__':
         if DATA_SET == 'forest':
             print(classification_report(y_test, ada_predict))
             print(confusion_matrix(y_test, ada_predict))
-        exit(0)
 
-    if ALG == 'SVM':
+    if ALG.__contains__('SVM'):
         svm_model = grid_search_cv_svm_model(X_train_transform, y_train, DATA_SET)
         svm_predict = svm_model.predict(X_test_transform)
         print("Best SVM estimator found by grid search:")
@@ -203,9 +320,8 @@ if __name__ == '__main__':
         if DATA_SET == 'forest':
             print(classification_report(y_test, svm_predict))
             print(confusion_matrix(y_test, svm_predict))
-        exit(0)
 
-    if ALG == 'NN':
+    if ALG.__contains__('NN'):
         nn_model = grid_search_cv_nn_model(X_train_transform, y_train)
         nn_predict = nn_model.predict(X_test_transform)
         print("Best NN estimator found by grid search:")
@@ -216,9 +332,8 @@ if __name__ == '__main__':
         if DATA_SET == 'forest':
             print(classification_report(y_test, nn_predict))
             print(confusion_matrix(y_test, nn_predict))
-        exit(0)
 
-    if ALG == 'KNN':
+    if ALG.__contains__('K_NN'):
         knn_model = grid_search_cv_knn_model(X_train_transform, y_train)
         knn_predict = knn_model.predict(X_test_transform)
         print("Best KNN estimator found by grid search:")
@@ -229,52 +344,59 @@ if __name__ == '__main__':
         if DATA_SET == 'forest':
             print(classification_report(y_test, knn_predict))
             print(confusion_matrix(y_test, knn_predict))
-        exit(0)
 
-    # Decision trees plain with grid search on parameters and cross-validation
-    dte_model = grid_search_cv_decision_tree_model(X_train_transform, y_train)
-    print("Best DTree estimator found by grid search:")
-    print(dte_model.best_estimator_)
-    dte_predict = dte_model.predict(X_test_transform)
-    if DATA_SET == 'faces':
-        print(classification_report(y_test, dte_predict, target_names=target_names))
-        print(confusion_matrix(y_test, dte_predict, labels=range(n_classes)))
-    if DATA_SET == 'forest':
-        print(classification_report(y_test, dte_predict))
-        print(confusion_matrix(y_test, dte_predict))
+    if ALG.__contains__('DTREE'):
+        # Decision trees plain with grid search on parameters and cross-validation
+        dte_model = grid_search_cv_decision_tree_model(X_train_transform, y_train)
+        print("Best DTree estimator found by grid search:")
+        print(dte_model.best_estimator_)
+        dte_predict = dte_model.predict(X_test_transform)
+        if DATA_SET == 'faces':
+            print(classification_report(y_test, dte_predict, target_names=target_names))
+            print(confusion_matrix(y_test, dte_predict, labels=range(n_classes)))
+        if DATA_SET == 'forest':
+            print(classification_report(y_test, dte_predict))
+            print(confusion_matrix(y_test, dte_predict))
 
-    # make visualization for dtrees
-    DTREE_VIZ_DIR = 'dtree_viz_images'
-    try:
-        os.makedirs(DTREE_VIZ_DIR)
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
-    new_dtree_viz_path = os.path.join(DTREE_VIZ_DIR, DATA_SET + "_" + XFORM + "_" +
-                                      re.sub('\s+', '_', str(dte_model.best_estimator_).
-                                             replace('(', '_').
-                                             replace(')', '_').
-                                             replace("'", '').
-                                             replace("\n", '').
-                                             replace(',', '')) +
-                                      str(n_components)) + '.svg'
-    if DATA_SET == 'faces':
-        viz = dtreeviz(dte_model.best_estimator_,
-                       x_data=X_train_transform,
-                       y_data=y_train,
-                       target_name='class',
-                       feature_names=X[1],
-                       class_names=list(target_names),
-                       title="Decision Tree - Labeled Faces in the Wild data set")
-    if DATA_SET == 'forest':
-        viz = dtreeviz(dte_model.best_estimator_,
-                       x_data=X_train_transform,
-                       y_data=y_train,
-                       target_name='class',
-                       feature_names=X[1],
-                       class_names=np.unique(y).tolist(),
-                       title="Decision Tree - Forest Cover Types data set")
-    svg_filename = viz.save_svg()
+        # make visualization for dtrees
+        DTREE_VIZ_DIR = 'dtree_viz_images'
+        try:
+            os.makedirs(DTREE_VIZ_DIR)
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise
+        new_dtree_viz_path = os.path.join(DTREE_VIZ_DIR, DATA_SET + "_" + XFORM + "_" +
+                                          re.sub('\s+', '_', str(dte_model.best_estimator_).
+                                                 replace('(', '_').
+                                                 replace(')', '_').
+                                                 replace("'", '').
+                                                 replace("\n", '').
+                                                 replace(',', '')) +
+                                          str(n_components)) + '.svg'
+        if DATA_SET == 'faces':
+            viz = dtreeviz(dte_model.best_estimator_,
+                           x_data=X_train_transform,
+                           y_data=y_train,
+                           target_name='class',
+                           feature_names=X[1],
+                           class_names=list(target_names),
+                           title="Decision Tree - Labeled Faces in the Wild data set")
+        if DATA_SET == 'forest':
+            viz = dtreeviz(dte_model.best_estimator_,
+                           x_data=X_train_transform,
+                           y_data=y_train,
+                           target_name='class',
+                           feature_names=X[1],
+                           class_names=np.unique(y).tolist(),
+                           title="Decision Tree - Forest Cover Types data set")
+        svg_filename = viz.save_svg()
 
-    curr_viz_file_path = Path(svg_filename).rename(new_dtree_viz_path)
-    print("dtreeviz svg file saved as: ", curr_viz_file_path)
+        curr_viz_file_path = Path(svg_filename).rename(new_dtree_viz_path)
+        print("dtreeviz svg file saved as: ", curr_viz_file_path)
+
+    if DO_LEARNING_CURVES:
+        fig, axes = plt.subplots(3, 2, figsize=(10, 15))
+        title = r"Learning Curves ("+ALG+")"
+        cv = ShuffleSplit(n_splits=10, test_size=0.2, random_state=0)
+        plot_learning_curve(dte_model, title, X_train_transform, y_train, axes=axes[:, 0], ylim=(0.5, 1.01), cv=cv, n_jobs=-1)
+        plt.show()

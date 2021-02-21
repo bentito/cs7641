@@ -206,6 +206,10 @@ if __name__ == '__main__':
     if DATA_SET == 'faces':
         _, h, w = data_set.images.shape
 
+        counts = np.bincount(data_set.target)
+        for i, (count, name) in enumerate(zip(counts, data_set.target_names)):
+            print('{0:25}   {1:3}'.format(name, count))
+
     X = data_set.data
     y = data_set.target
 
@@ -215,6 +219,10 @@ if __name__ == '__main__':
         oversample = SMOTE()
         X, y = oversample.fit_resample(X, y)
     if DATA_SET == 'forest':
+        counts = np.bincount(y)[1:]
+        for i, count in enumerate(counts):
+            print('{0:25}   {1:3}'.format(i+1, count))
+
         file = pathlib.Path("forest_X_smoted.npy")
         if file.exists():
             X = load('forest_X_smoted.npy')
@@ -253,8 +261,8 @@ if __name__ == '__main__':
     # XFORM = 'None'
     # XFORM = 'MINMAX'
 
-    ALG = 'DTREE'
-    # ALG = 'ADABOOST'
+    # ALG = 'DTREE'
+    ALG = 'ADABOOST'
     # ALG = 'SVM'
     # ALG = 'NN'
     # ALG = 'K_NN'
@@ -396,7 +404,7 @@ if __name__ == '__main__':
 
     if DO_LEARNING_CURVES:
         fig, axes = plt.subplots(3, 2, figsize=(10, 15))
-        title = r"Learning Curves ("+ALG+")"
+        title = r"Learning Curves ("+DATA_SET+"_"+ALG+")"
         cv = ShuffleSplit(n_splits=10, test_size=0.2, random_state=0)
-        plot_learning_curve(dte_model, title, X_train_transform, y_train, axes=axes[:, 0], ylim=(0.5, 1.01), cv=cv, n_jobs=-1)
+        plot_learning_curve(ada_model, title, X_train_transform, y_train, axes=axes[:, 0], ylim=(0.5, 1.01), cv=cv, n_jobs=-1)
         plt.show()

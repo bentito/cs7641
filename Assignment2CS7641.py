@@ -1,92 +1,193 @@
+import csv
+
 import mlrose_hiive as mlrose
+import matplotlib.pyplot as plt
 import numpy as np
+import time
 from imblearn.over_sampling import SMOTE
 from sklearn.datasets import fetch_lfw_people
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.decomposition import PCA
+from textwrap import wrap
 
 
-def knapsack_setup(max_weight_pct):
-    weights = [10, 5, 2, 8, 15]
-    values = [1, 2, 3, 4, 5]
-    fitness = mlrose.Knapsack(weights, values, max_weight_pct, max_item_count=100)
-    return mlrose.DiscreteOpt(length=5, fitness_fn=fitness, max_val=100)
+def knapsack_problem_setup(num_items, max_weight_pct, max_val):
+    weights = list(np.random.randint(low=1, high=100, size=num_items))
+    values = list(np.random.randint(low=1, high=100, size=num_items))
+    fitness = mlrose.Knapsack(weights, values, max_weight_pct)
+    return mlrose.DiscreteOpt(length=num_items, fitness_fn=fitness, max_val=max_val)
 
 
-def six_peaks_setup(t_pct):
+def six_peaks_problem_setup(t_pct):
     fitness = mlrose.SixPeaks(t_pct)
     return mlrose.DiscreteOpt(length=12, fitness_fn=fitness, max_val=2)
 
 
-def flip_flop_setup(t_pct):
+def flip_flop_problem_setup():
     fitness = mlrose.FlipFlop()
     return mlrose.DiscreteOpt(length=12, fitness_fn=fitness, max_val=2)
 
 
-def do_knapsack_analysis(problem, schedule, init_state):
-    best_state = np.zeros((4, len(init_state)))
+def do_knapsack_analysis(problem, schedule, max_attempts, max_iters, keep_pct):
+    best_state = np.zeros((4, problem.length))
     best_fit = np.zeros(4)
-    fitness_curve = np.zeros((4, 100, 2))
-    best_state[0], best_fit[0], fitness_curve[0] = mlrose.simulated_annealing(problem,
-                                                                              schedule=schedule,
-                                                                              max_attempts=1000,
-                                                                              max_iters=1000,
-                                                                              init_state=init_state,
-                                                                              curve=False,
-                                                                              random_state=1)
-    best_state[1], best_fit[1], fitness_curve[1] = mlrose.genetic_alg(problem,
-                                                                      max_attempts=1000,
-                                                                      max_iters=1000,
-                                                                      curve=False,
-                                                                      random_state=1)
-    best_state[2], best_fit[2], fitness_curve[2] = mlrose.random_hill_climb(problem,
-                                                                            restarts=1000,
-                                                                            max_iters=1000,
-                                                                            init_state=init_state,
-                                                                            curve=False,
-                                                                            random_state=1)
-    best_state[3], best_fit[3], fitness_curve[3] = mlrose.mimic(problem,
-                                                                max_attempts=1000,
-                                                                max_iters=1000,
-                                                                curve=False,
-                                                                random_state=1)
-    return best_state, best_fit, fitness_curve
+    times = np.zeros(4)
+    fitness_curve = np.zeros((4, max_iters, 2))
+    start = time.process_time_ns()
+    best_state[0], best_fit[0], fit_curve = mlrose.simulated_annealing(problem,
+                                                                       schedule=schedule,
+                                                                       max_attempts=max_attempts,
+                                                                       max_iters=max_iters,
+                                                                       curve=True,
+                                                                       random_state=1)
+    end = time.process_time_ns()
+    times[0] = end - start
+    fitness_curve[0], fit_curve = pad_in_fit_curve(fitness_curve[0], fit_curve)
+
+    start = time.process_time_ns()
+    best_state[1], best_fit[1], fit_curve = mlrose.genetic_alg(problem,
+                                                               max_attempts=max_attempts,
+                                                               max_iters=max_iters,
+                                                               curve=True,
+                                                               random_state=1)
+    end = time.process_time_ns()
+    times[1] = end - start
+    fitness_curve[1], fit_curve = pad_in_fit_curve(fitness_curve[1], fit_curve)
+
+    start = time.process_time_ns()
+    best_state[2], best_fit[2], fit_curve = mlrose.random_hill_climb(problem,
+                                                                     restarts=100,
+                                                                     max_attempts=max_attempts,
+                                                                     max_iters=max_iters,
+                                                                     curve=True,
+                                                                     random_state=1)
+    end = time.process_time_ns()
+    times[2] = end - start
+    fitness_curve[2], fit_curve = pad_in_fit_curve(fitness_curve[2], fit_curve)
+
+    start = time.process_time_ns()
+    best_state[3], best_fit[3], fit_curve = mlrose.mimic(problem,
+                                                         max_attempts=max_attempts,
+                                                         max_iters=max_iters,
+                                                         keep_pct=keep_pct,
+                                                         curve=True,
+                                                         random_state=1)
+    fitness_curve[3], fit_curve = pad_in_fit_curve(fitness_curve[3], fit_curve)
+    end = time.process_time_ns()
+    times[3] = end - start
+    return best_state, best_fit, fitness_curve, times
+
+
+def pad_in_fit_curve(larger_array, sm_array):
+    larger_array[:sm_array.shape[0], :sm_array.shape[1]] = sm_array
+    sm_array = []
+    return larger_array, sm_array
+
+
+def longest_fit_curve(fitness_curve):
+    longest = np.max(np.nonzero(fitness_curve))
+    return longest
+
+
+def plot_fitness_curves(fitness_curve, num_items, annealing_schedule, max_weight_pct, max_iters, max_attempts, max_val,
+                        keep_pct, times):
+    times = times / 1000000
+    longest_fit = longest_fit_curve(fitness_curve)
+    plt.rcParams["figure.figsize"] = (10, 5)
+    plt.plot(range(longest_fit), fitness_curve[0, :longest_fit, 0], 'o-')
+    plt.plot(range(longest_fit), fitness_curve[1, :longest_fit, 0], 'o-')
+    plt.plot(range(longest_fit), fitness_curve[2, :longest_fit, 0], 'o-')
+    plt.plot(range(longest_fit), fitness_curve[3, :longest_fit, 0], 'o-')
+    plt.title("\n".join(wrap("Knapsack Fitness Curves (num_items: " + str(num_items) +
+                             ")(anneal_sched: " + annealing_schedule +
+                             ")(max_weight_pct:" + str(max_weight_pct) +
+                             ")(max_iters:" + str(max_iters) +
+                             ")(max_val:" + str(max_val) +
+                             ")(keep_pct:" + str(keep_pct) +
+                             ")(max_attempts:" + str(max_attempts) + ")", 40)))
+    plt.xlabel("Iterations")
+    plt.ylabel("Fitness")
+    plt.legend(["simulated annealing" + ' [time: ' + str(times[0]) + 'ms]',
+                "genetic algorithm" + ' [time: ' + str(times[1]) + 'ms]',
+                "hill climb" + ' [time: ' + str(times[2]) + 'ms]',
+                "mimic" + ' [time: ' + str(times[3]) + 'ms]'],
+               loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.tight_layout()
+    plt.show()
 
 
 if __name__ == '__main__':
-    NN = True
-    # fitness = mlrose.Queens()
-    # problem = mlrose.DiscreteOpt(length=8, fitness_fn=fitness, maximize=False, max_val=8)
-    # schedule = mlrose.ExpDecay()
-    # init_state = np.array([0, 1, 2, 3, 4, 5, 6, 7])
-    #
-    # best_state, best_fitness, fitness_curve = mlrose.simulated_annealing(problem,
-    #                                                                      schedule=schedule,
-    #                                                                      max_attempts=100,
-    #                                                                      max_iters=1000,
-    #                                                                      init_state=init_state,
-    #                                                                      random_state=1)
-    # print(best_state)
-    # print(best_fitness)
+    NN = False
+    PLOT_SPECIALS = True
     if not NN:
-        max_weight_pct = 0.6
-        problem = knapsack_setup(max_weight_pct)
-        schedule = mlrose.ExpDecay()
-        init_state = np.array([1, 0, 2, 1, 0])
-        best_state, best_fitness, fitness_curve = do_knapsack_analysis(problem, schedule, init_state)
-        best_idx = np.argmax(best_fitness)
-        if best_idx == 0:
-            alg = "SA"
-        if best_idx == 1:
-            alg = "GA"
-        if best_idx == 2:
-            alg = "RHC"
-        if best_idx == 3:
-            alg = "MIMIC"
-        print("knapsack_best is %s with best state & best fitness: %s, %f" % (
-            alg, np.array2string(best_state[best_idx]), best_fitness[best_idx]))
+        schedules = [mlrose.ExpDecay(), mlrose.GeomDecay(), mlrose.ArithDecay()]
+        annealing_schedules = ['exp_decay', 'geom_decay', 'arith_decay']
+        max_weight_pcts = [0.2, 0.35]
+        num_itemses = [5, 7, 12]
+        max_iterses = [200, 1000]
+        max_attemptses = [5, 10, 15]
+        max_vals = [2, 5]
+        keep_pcts = [0.2, 0.4]
+        # knapsack
+        justOneHeader = True
+        if not PLOT_SPECIALS:
+            with open('gridsearch_knapsack.csv', 'w', newline='') as csvfile:
+                spamwriter = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+                for keep_pct in keep_pcts:
+                    for max_val in max_vals:
+                        for max_iters in max_iterses:
+                            for num_items in num_itemses:
+                                for schedule, annealing_schedule in zip(schedules, annealing_schedules):
+                                    for max_weight_pct in max_weight_pcts:
+                                        problem = knapsack_problem_setup(num_items, max_weight_pct, max_val)
+                                        for max_attempts in max_attemptses:
+                                            best_state, best_fitness, fitness_curve, times = do_knapsack_analysis(
+                                                problem, schedule,
+                                                max_attempts,
+                                                max_iters,
+                                                keep_pct)
+                                            best_idx = np.argmax(best_fitness)
+                                            if best_idx == 0:
+                                                alg = "SA"
+                                            if best_idx == 1:
+                                                alg = "GA"
+                                            if best_idx == 2:
+                                                alg = "RHC"
+                                            if best_idx == 3:
+                                                alg = "MIMIC"
+                                            print("knapsack_best is %s " %
+                                                  alg)
+                                            print("    with best state & best fitness: %s, %f" %
+                                                  (np.array2string(best_state[best_idx]), best_fitness[best_idx]))
+                                            print(
+                                                "         for max_att: %d, max_weight_pct: %f, schedule: %s, num_items: %d," %
+                                                (max_attempts, max_weight_pct, annealing_schedule, num_items))
+                                            print("             max_iters: %d, time: %f" %
+                                                  (max_iters, times[best_idx] / 1000000))
+                                            if justOneHeader:
+                                                spamwriter.writerow(
+                                                    ['alg', 'best_state', 'best_fitness', 'max_att', 'max_wgt',
+                                                     'annealing', 'num_items', 'max_iters', 'max_val', 'keep_pct',
+                                                     'time'])
+                                                justOneHeader = False
+                                            spamwriter.writerow(
+                                                [alg, np.array2string(best_state[best_idx]), best_fitness[best_idx],
+                                                 max_attempts, max_weight_pct, annealing_schedule, num_items, max_iters,
+                                                 max_val, times[best_idx] / 1000000])
+        if PLOT_SPECIALS:
+            # num_items, max_weight_pct, max_val, schedule, annealing_schedule, max_attempts, max_iters = 7, 0.35, 5, mlrose.ExpDecay(), 'exp_decay', 5, 200
+            # problem = knapsack_problem_setup(num_items, max_weight_pct, max_val)
+            # best_state, best_fitness, fitness_curve, times = do_knapsack_analysis(problem, schedule, max_attempts, max_iters)
+            # plot_fitness_curves(fitness_curve, num_items, annealing_schedule, max_weight_pct, max_iters, max_attempts, max_val, times)
+            #
+            num_items, max_weight_pct, max_val, schedule, annealing_schedule, max_attempts, max_iters, keep_pct = 7, 0.35, 5, mlrose.ExpDecay(), 'exp_decay', 5, 5000, 0.3
+            problem = knapsack_problem_setup(num_items, max_weight_pct, max_val)
+            best_state, best_fitness, fitness_curve, times = do_knapsack_analysis(problem, schedule, max_attempts,
+                                                                                  max_iters, keep_pct)
+            plot_fitness_curves(fitness_curve, num_items, annealing_schedule, max_weight_pct, max_iters, max_attempts,
+                                max_val, keep_pct, times)
     else:
         data_set = fetch_lfw_people(min_faces_per_person=70, resize=0.4)
         X = data_set.data

@@ -1,6 +1,6 @@
 Code usage notes for Randomized Optimization Assignment
 
-To get the code:
+To get the code (now public w00t!):
 git clone https://github.com/bentito/cs7641.git
 
 To recreate the Python environment:

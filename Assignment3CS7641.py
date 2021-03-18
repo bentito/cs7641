@@ -146,33 +146,69 @@ def plot_learning_curve(estimator, title, X, y, axes=None, ylim=None, cv=None,
     return plt
 
 
-if __name__ == '__main__':
-    DATA_SET = "forest"
-    # DATA_SET = "faces"
+def do_nn(dataset):
+    if dataset == 'faces':
+        nn_model = MLPClassifier(alpha=0.05, hidden_layer_sizes=(20,), learning_rate='adaptive', max_iter=500)
+    if dataset == 'forest':
+        nn_model = MLPClassifier(activation='tanh', alpha=0.05, hidden_layer_sizes=(20,),
+                                 learning_rate='adaptive', max_iter=500)
+    nn_model.fit(X_train_transform, y_train)
+    nn_predict = nn_model.predict(X_test_transform)
+    print(classification_report(y_test, nn_predict))
+    print(confusion_matrix(y_test, nn_predict))
 
-    if DATA_SET == 'faces':
+
+def do_k_means():
+    pass
+
+
+def do_em():
+    pass
+
+
+def do_pca(X_train_transform, X_test_transform):
+    pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train_transform)
+    X_train_transform = pca.transform(X_train_transform)
+    X_test_transform = pca.transform(X_test_transform)
+    return X_train_transform, X_test_transform
+
+def do_ica():
+    pass
+
+
+def do_randomized_projections():
+    pass
+
+
+def do_some_other_feat_selection_algorithm():
+    pass
+
+
+def do_the_grid():
+    pass
+
+
+def get_the_data(dataset):
+    if dataset == 'faces':
         # init Labeled Faces in the Wild dataset
         data_set = fetch_lfw_people(min_faces_per_person=70, resize=0.4)
-    if DATA_SET == 'forest':
+    if dataset == 'forest':
         # init Forest Cover Types dataset
         data_set = fetch_covtype()
-
-    if DATA_SET == 'faces':
+    if dataset == 'faces':
         _, h, w = data_set.images.shape
 
         counts = np.bincount(data_set.target)
         for i, (count, name) in enumerate(zip(counts, data_set.target_names)):
             print('{0:25}   {1:3}'.format(name, count))
-
     X = data_set.data
     y = data_set.target
-
     # Both cov_type & LFW are not balanced sets, at all.
     # So generate synthetic samples to make up minority class deficiencies
-    if DATA_SET == 'faces':
+    if dataset == 'faces':
         oversample = SMOTE()
         X, y = oversample.fit_resample(X, y)
-    if DATA_SET == 'forest':
+    if dataset == 'forest':
         counts = np.bincount(y)[1:]
 
         file = pathlib.Path("forest_X_smoted.npy")
@@ -184,34 +220,35 @@ if __name__ == '__main__':
             X, y = oversample.fit_resample(X, y)
             save('forest_X_smoted.npy', X)
             save('forest_y_smoted', y)
-
-    if DATA_SET == 'faces':
+    if dataset == 'faces':
         n_features = X.shape[1]
         target_names = data_set.target_names
         n_classes = target_names.shape[0]
-    if DATA_SET == 'forest':
+    if dataset == 'forest':
         n_features = X.shape[1]
         target_names = data_set.target_names
         n_classes = len(target_names)
-
-    if DATA_SET == 'faces':
+    if dataset == 'faces':
         X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-    if DATA_SET == 'forest':
+    if dataset == 'forest':
         X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=5000, test_size=10000, random_state=1)
-
     X_train_transform = np.zeros_like(X_train)
     X_test_transform = np.zeros_like(X_test)
-
-    if DATA_SET == 'faces':
+    if dataset == 'faces':
         n_components = 60
-    if DATA_SET == 'forest':
+    if dataset == 'forest':
         n_components = 50
+    return target_names, n_classes, X_train, X_test, y_train, y_test, X_train_transform, X_test_transform, n_components
 
-    XFORM = 'JUST_P_CA'
-    # XFORM = 'SS+PCA'
-    # XFORM = 'SS'
+
+if __name__ == '__main__':
+    # request data set as "faces" or "forest"
+    data_set = "forest"
+    target_names, n_classes, X_train, X_test, y_train, y_test, X_train_transform, X_test_transform, n_components = \
+        get_the_data(data_set)
+
+    XFORM = 'PCA'
     # XFORM = 'None'
-    # XFORM = 'MINMAX'
 
     ALG = 'NN'
 
@@ -221,46 +258,18 @@ if __name__ == '__main__':
         # do no transforms
         X_train_transform = X_train
         X_test_transform = X_test
-    if XFORM.__contains__('SS'):
-        ss = StandardScaler()
-        X_train_transform = ss.fit_transform(X_train)
-        X_test_transform = ss.fit_transform(X_test)
-    if XFORM.__contains__('LBP'):
-        # try LBP manually
-        from skimage.feature import local_binary_pattern
-
-        for i, image in enumerate(X_train):
-            X_train_transform[i] = np.ravel(local_binary_pattern(np.reshape(image, (h, w)), 24, 3))
-        for i, image in enumerate(X_test):
-            X_test_transform[i] = np.ravel(local_binary_pattern(np.reshape(image, (h, w)), 24, 3))
     if XFORM.__contains__('PCA'):
-        pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train_transform)
-        X_train_transform = pca.transform(X_train_transform)
-        X_test_transform = pca.transform(X_test_transform)
-    if XFORM.__contains__('JUST_P_CA'):
-        pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train)
-        X_train_transform = pca.transform(X_train)
-        X_test_transform = pca.transform(X_test)
-    if XFORM.__contains__('MINMAX'):
-        mm = make_pipeline(MinMaxScaler(), Normalizer())
-        X_train_transform = mm.fit_transform(X_train)
-        X_test_transform = mm.transform(X_test)
+        X_train_transform, X_test_transform = do_pca(X_train, X_test)
+
+    # TODO
+    do_the_grid()
 
     if ALG.__contains__('NN'):
-        nn_model = grid_search_cv_nn_model(X_train_transform, y_train)
-        nn_predict = nn_model.predict(X_test_transform)
-        print("Best NN estimator found by grid search:")
-        print(nn_model.best_estimator_)
-        if DATA_SET == 'faces':
-            print(classification_report(y_test, nn_predict, target_names=target_names))
-            print(confusion_matrix(y_test, nn_predict, labels=range(n_classes)))
-        if DATA_SET == 'forest':
-            print(classification_report(y_test, nn_predict))
-            print(confusion_matrix(y_test, nn_predict))
+        do_nn(data_set)
 
     if DO_LEARNING_CURVES:
         fig, axes = plt.subplots(3, 2, figsize=(10, 15))
-        title = r"Learning Curves ("+DATA_SET+"_"+ALG+")"
+        title = r"Learning Curves (" + DATA_SET + "_" + ALG + ")"
         cv = ShuffleSplit(n_splits=10, test_size=0.2, random_state=0)
         # plot_learning_curve(ada_model, title, X_train_transform, y_train, axes=axes[:, 0], ylim=(0.5, 1.01), cv=cv, n_jobs=-1)
         plt.show()

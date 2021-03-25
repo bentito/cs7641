@@ -1,7 +1,10 @@
 # Assignment 3 Clustering and Dimensionality Reduction
+from time import time
 
 from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import make_pipeline
+from sklearn.cluster import KMeans
+from sklearn import metrics
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split, learning_curve, ShuffleSplit
 from sklearn.model_selection import GridSearchCV
@@ -14,20 +17,6 @@ from numpy import save
 from numpy import load
 import pathlib
 from sklearn.neural_network import MLPClassifier
-
-
-def grid_search_cv_nn_model(X_train, y_train):
-    mlp_gs = MLPClassifier(max_iter=500)
-    parameter_space = {
-        'hidden_layer_sizes': [(10, 30, 10), (20,)],
-        'activation': ['tanh', 'relu'],
-        'solver': ['sgd', 'adam'],
-        'alpha': [0.0001, 0.05],
-        'learning_rate': ['constant', 'adaptive'],
-    }
-    model = GridSearchCV(mlp_gs, parameter_space, n_jobs=-1, cv=5)
-    model.fit(X_train, y_train)
-    return model
 
 
 def plot_learning_curve(estimator, title, X, y, axes=None, ylim=None, cv=None,
@@ -158,33 +147,91 @@ def do_nn(dataset):
     print(confusion_matrix(y_test, nn_predict))
 
 
-def do_k_means():
+def bench_k_means(kmeans, name, data, labels):
+    """Benchmark to evaluate the KMeans initialization methods.
+
+    Parameters
+    ----------
+    kmeans : KMeans instance
+        A :class:`~sklearn.cluster.KMeans` instance with the initialization
+        already set.
+    name : str
+        Name given to the strategy. It will be used to show the results in a
+        table.
+    data : ndarray of shape (n_samples, n_features)
+        The data to cluster.
+    labels : ndarray of shape (n_samples,)
+        The labels used to compute the clustering metrics which requires some
+        supervision.
+    """
+    t0 = time()
+    estimator = make_pipeline(StandardScaler(), kmeans).fit(data)
+    fit_time = time() - t0
+    results = [name, fit_time, estimator[-1].inertia_]
+
+    # Define the metrics which require only the true labels and estimator
+    # labels
+    clustering_metrics = [
+        metrics.homogeneity_score,
+        metrics.completeness_score,
+        metrics.v_measure_score,
+        metrics.adjusted_rand_score,
+        metrics.adjusted_mutual_info_score,
+    ]
+    results += [m(labels, estimator[-1].labels_) for m in clustering_metrics]
+
+    # The silhouette score requires the full dataset
+    results += [
+        metrics.silhouette_score(data, estimator[-1].labels_, metric="euclidean", sample_size=300, )
+    ]
+
+    # Show the results
+    formatter_result = ("{:9s}\t{:.3f}s\t{:.0f}\t{:.3f}\t{:.3f}"
+                        "\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}")
+    print(formatter_result.format(*results))
+
+
+def do_k_means(X, y, n_classes):
+    print(82 * '_')
+    print('init\t\ttime\tinertia\thomo\tcompl\tv-meas\tARI\t\tAMI\t\tsilhouette')
+
+    kmeans = KMeans(init="k-means++", n_clusters=n_classes, n_init=4, random_state=0)
+    bench_k_means(kmeans=kmeans, name="k-means++", data=X, labels=y)
+
+    kmeans = KMeans(init="random", n_clusters=n_classes, n_init=4, random_state=0)
+    bench_k_means(kmeans=kmeans, name="random", data=X, labels=y)
+
+    # pca = PCA(n_components=n_digits).fit(data)
+    # kmeans = KMeans(init=pca.components_, n_clusters=n_digits, n_init=1)
+    # bench_k_means(kmeans=kmeans, name="PCA-based", data=data, labels=labels)
+
+    print(82 * '_')
+
+
+def do_em(X_train_transform):
     pass
 
 
-def do_em():
-    pass
-
-
-def do_pca(X_train_transform, X_test_transform):
-    pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train_transform)
-    X_train_transform = pca.transform(X_train_transform)
-    X_test_transform = pca.transform(X_test_transform)
+def do_pca(X_train, X_test, n_components):
+    pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train)
+    X_train_transform = pca.transform(X_train)
+    X_test_transform = pca.transform(X_test)
     return X_train_transform, X_test_transform
 
-def do_ica():
+
+def do_ica(X_train_transform, X_test_transform):
     pass
 
 
-def do_randomized_projections():
+def do_randomized_projections(X_train_transform, X_test_transform):
     pass
 
 
-def do_some_other_feat_selection_algorithm():
+def do_some_other_feat_selection_algorithm(X_train_transform, X_test_transform):
     pass
 
 
-def do_the_grid():
+def do_the_grid(data_set):
     pass
 
 
@@ -197,60 +244,49 @@ def get_the_data(dataset):
         data_set = fetch_covtype()
     if dataset == 'faces':
         _, h, w = data_set.images.shape
-
-        counts = np.bincount(data_set.target)
-        for i, (count, name) in enumerate(zip(counts, data_set.target_names)):
-            print('{0:25}   {1:3}'.format(name, count))
-    X = data_set.data
-    y = data_set.target
+    # counts = np.bincount(data_set.target)
+    # for i, (count, name) in enumerate(zip(counts, data_set.target_names)):
+    #     print('{0:25}   {1:3}'.format(name, count))
+    X_orig = data_set.data
+    y_orig = data_set.target
     # Both cov_type & LFW are not balanced sets, at all.
     # So generate synthetic samples to make up minority class deficiencies
     if dataset == 'faces':
         oversample = SMOTE()
-        X, y = oversample.fit_resample(X, y)
+        X, y = oversample.fit_resample(X_orig, y_orig)
     if dataset == 'forest':
-        counts = np.bincount(y)[1:]
-
         file = pathlib.Path("forest_X_smoted.npy")
         if file.exists():
             X = load('forest_X_smoted.npy')
             y = load('forest_y_smoted.npy')
         else:
             oversample = SMOTE()
-            X, y = oversample.fit_resample(X, y)
+            X, y = oversample.fit_resample(X_orig, y_orig)
             save('forest_X_smoted.npy', X)
             save('forest_y_smoted', y)
     if dataset == 'faces':
-        n_features = X.shape[1]
         target_names = data_set.target_names
         n_classes = target_names.shape[0]
     if dataset == 'forest':
-        n_features = X.shape[1]
         target_names = data_set.target_names
         n_classes = len(target_names)
     if dataset == 'faces':
         X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
     if dataset == 'forest':
         X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=5000, test_size=10000, random_state=1)
-    X_train_transform = np.zeros_like(X_train)
-    X_test_transform = np.zeros_like(X_test)
-    if dataset == 'faces':
-        n_components = 60
-    if dataset == 'forest':
-        n_components = 50
-    return target_names, n_classes, X_train, X_test, y_train, y_test, X_train_transform, X_test_transform, n_components
+    return target_names, n_classes, X_train, X_test, y_train, y_test, X_orig, y_orig
 
 
 if __name__ == '__main__':
     # request data set as "faces" or "forest"
-    data_set = "forest"
-    target_names, n_classes, X_train, X_test, y_train, y_test, X_train_transform, X_test_transform, n_components = \
-        get_the_data(data_set)
+    data_set = "faces"
+    target_names, n_classes, X_train, X_test, y_train, y_test, X_orig, y_orig = get_the_data(data_set)
 
-    XFORM = 'PCA'
-    # XFORM = 'None'
+    # XFORM = 'PCA'
+    XFORM = 'None'
 
-    ALG = 'NN'
+    # ALG = 'NN'
+    ALG = 'None'
 
     DO_LEARNING_CURVES = False
 
@@ -262,14 +298,17 @@ if __name__ == '__main__':
         X_train_transform, X_test_transform = do_pca(X_train, X_test)
 
     # TODO
-    do_the_grid()
+    do_k_means(X_orig, y_orig, n_classes)
+
+    # TODO
+    do_the_grid(data_set)
 
     if ALG.__contains__('NN'):
         do_nn(data_set)
 
     if DO_LEARNING_CURVES:
         fig, axes = plt.subplots(3, 2, figsize=(10, 15))
-        title = r"Learning Curves (" + DATA_SET + "_" + ALG + ")"
+        title = r"Learning Curves (" + data_set + "_" + ALG + ")"
         cv = ShuffleSplit(n_splits=10, test_size=0.2, random_state=0)
         # plot_learning_curve(ada_model, title, X_train_transform, y_train, axes=axes[:, 0], ylim=(0.5, 1.01), cv=cv, n_jobs=-1)
         plt.show()

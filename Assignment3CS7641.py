@@ -201,9 +201,9 @@ def do_k_means(X, y, n_classes):
     kmeans = KMeans(init="random", n_clusters=n_classes, n_init=4, random_state=0)
     bench_k_means(kmeans=kmeans, name="random", data=X, labels=y)
 
-    # pca = PCA(n_components=n_digits).fit(data)
-    # kmeans = KMeans(init=pca.components_, n_clusters=n_digits, n_init=1)
-    # bench_k_means(kmeans=kmeans, name="PCA-based", data=data, labels=labels)
+    _, _, pca = do_pca(X, None, n_components=n_classes)
+    kmeans = KMeans(init=pca.components_, n_clusters=n_classes, n_init=1)
+    bench_k_means(kmeans=kmeans, name="PCA-based", data=X, labels=y)
 
     print(82 * '_')
 
@@ -215,8 +215,10 @@ def do_em(X_train_transform):
 def do_pca(X_train, X_test, n_components):
     pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train)
     X_train_transform = pca.transform(X_train)
+    if X_test is None:
+        return X_train_transform, None, pca
     X_test_transform = pca.transform(X_test)
-    return X_train_transform, X_test_transform
+    return X_train_transform, X_test_transform, pca
 
 
 def do_ica(X_train_transform, X_test_transform):

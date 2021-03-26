@@ -210,9 +210,9 @@ def do_k_means(X, y, n_classes):
     kmeans = KMeans(init=ica.components_, n_clusters=n_classes, n_init=1)
     bench_k_means(kmeans=kmeans, name="ICA-based", data=X, labels=y)
 
-    rand_proj = do_randomized_projections(X)
+    rand_proj = do_randomized_projections(X, n_components=n_classes)
     kmeans = KMeans(init=rand_proj.components_, n_clusters=n_classes, n_init=1)
-    bench_k_means(kmeans=kmeans, name="rand-proj-based", data=X, labels=y)
+    bench_k_means(kmeans=kmeans, name="rnd-proj", data=X, labels=y)
 
     print(82 * '_')
 
@@ -237,8 +237,8 @@ def do_ica(X, n_components):
     return ica
 
 
-def do_randomized_projections(X):
-    rand_proj = random_projection.GaussianRandomProjection()
+def do_randomized_projections(X, n_components):
+    rand_proj = random_projection.GaussianRandomProjection(n_components=n_components, random_state=1)
     _ = rand_proj.fit_transform(X)
     return rand_proj
 

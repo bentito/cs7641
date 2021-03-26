@@ -10,7 +10,8 @@ from sklearn.model_selection import train_test_split, learning_curve, ShuffleSpl
 from sklearn.model_selection import GridSearchCV
 from sklearn.datasets import fetch_lfw_people
 from sklearn.datasets import fetch_covtype
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, FastICA
+from sklearn import random_projection
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, Normalizer
 from dtreeviz.trees import *
 from numpy import save
@@ -205,6 +206,14 @@ def do_k_means(X, y, n_classes):
     kmeans = KMeans(init=pca.components_, n_clusters=n_classes, n_init=1)
     bench_k_means(kmeans=kmeans, name="PCA-based", data=X, labels=y)
 
+    ica = do_ica(X, n_components=n_classes)
+    kmeans = KMeans(init=ica.components_, n_clusters=n_classes, n_init=1)
+    bench_k_means(kmeans=kmeans, name="ICA-based", data=X, labels=y)
+
+    rand_proj = do_randomized_projections(X)
+    kmeans = KMeans(init=rand_proj.components_, n_clusters=n_classes, n_init=1)
+    bench_k_means(kmeans=kmeans, name="rand-proj-based", data=X, labels=y)
+
     print(82 * '_')
 
 
@@ -213,7 +222,7 @@ def do_em(X_train_transform):
 
 
 def do_pca(X_train, X_test, n_components):
-    pca = PCA(n_components=n_components, svd_solver='auto', whiten=True).fit(X_train)
+    pca = PCA(n_components=n_components, svd_solver='auto', whiten=True, random_state=1).fit(X_train)
     X_train_transform = pca.transform(X_train)
     if X_test is None:
         return X_train_transform, None, pca
@@ -221,12 +230,17 @@ def do_pca(X_train, X_test, n_components):
     return X_train_transform, X_test_transform, pca
 
 
-def do_ica(X_train_transform, X_test_transform):
-    pass
+def do_ica(X, n_components):
+    ica = FastICA(n_components=n_components, algorithm='deflation', whiten=True, fun='logcosh', fun_args=None, max_iter=200,
+            tol=0.001, w_init=None, random_state=1)
+    ica.fit_transform(X)
+    return ica
 
 
-def do_randomized_projections(X_train_transform, X_test_transform):
-    pass
+def do_randomized_projections(X):
+    rand_proj = random_projection.GaussianRandomProjection()
+    _ = rand_proj.fit_transform(X)
+    return rand_proj
 
 
 def do_some_other_feat_selection_algorithm(X_train_transform, X_test_transform):

@@ -6,6 +6,7 @@ from imblearn.pipeline import make_pipeline
 from sklearn.cluster import KMeans
 from sklearn import metrics
 from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.mixture import GaussianMixture
 from sklearn.model_selection import train_test_split, learning_curve, ShuffleSplit
 from sklearn.model_selection import GridSearchCV
 from sklearn.datasets import fetch_lfw_people
@@ -192,6 +193,50 @@ def bench_k_means(kmeans, name, data, labels):
     print(formatter_result.format(*results))
 
 
+def bench_em(gm, name, data, labels):
+    """Benchmark to evaluate the KMeans initialization methods.
+
+    Parameters
+    ----------
+    gm : GMM instance
+        A :class:`~sklearn.mixture.GaussianMixture` instance with the initialization
+        already set.
+    name : str
+        Name given to the strategy. It will be used to show the results in a
+        table.
+    data : ndarray of shape (n_samples, n_features)
+        The data to cluster.
+    labels : ndarray of shape (n_samples,)
+        The labels used to compute the clustering metrics which requires some
+        supervision.
+    """
+    t0 = time()
+    estimator = make_pipeline(StandardScaler(), gm).fit(data)
+    fit_time = time() - t0
+    results = [name, fit_time, estimator[-1].inertia_]
+
+    # Define the metrics which require only the true labels and estimator
+    # labels
+    clustering_metrics = [
+        metrics.homogeneity_score,
+        metrics.completeness_score,
+        metrics.v_measure_score,
+        metrics.adjusted_rand_score,
+        metrics.adjusted_mutual_info_score,
+    ]
+    results += [m(labels, estimator[-1].labels_) for m in clustering_metrics]
+
+    # The silhouette score requires the full dataset
+    results += [
+        metrics.silhouette_score(data, estimator[-1].labels_, metric="euclidean", sample_size=300, )
+    ]
+
+    # Show the results
+    formatter_result = ("{:9s}\t{:.3f}s\t{:.0f}\t{:.3f}\t{:.3f}"
+                        "\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}")
+    print(formatter_result.format(*results))
+
+
 def do_k_means(X, y, n_classes):
     print(82 * '_')
     print('init\t\ttime\tinertia\thomo\tcompl\tv-meas\tARI\t\tAMI\t\tsilhouette')
@@ -217,9 +262,12 @@ def do_k_means(X, y, n_classes):
     print(82 * '_')
 
 
-def do_em(X_train_transform):
-    pass
+def do_em(X, y, n_classes):
+    print(82 * '_')
+    print('init\t\ttime\tinertia\thomo\tcompl\tv-meas\tARI\t\tAMI\t\tsilhouette')
 
+    gm = GaussianMixture(n_components=n_classes, random_state=1)
+    bench_em(gm, name="baseline", data=X, labels=y)
 
 def do_pca(X_train, X_test, n_components):
     pca = PCA(n_components=n_components, svd_solver='auto', whiten=True, random_state=1).fit(X_train)
@@ -313,8 +361,9 @@ if __name__ == '__main__':
     if XFORM.__contains__('PCA'):
         X_train_transform, X_test_transform = do_pca(X_train, X_test)
 
-    # TODO
-    do_k_means(X_orig, y_orig, n_classes)
+    # do_k_means(X_orig, y_orig, n_classes)
+
+    do_em(X_orig, y_orig, n_classes)
 
     # TODO
     do_the_grid(data_set)

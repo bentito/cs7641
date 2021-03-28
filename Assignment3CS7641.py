@@ -213,27 +213,25 @@ def bench_em(gm, name, data, labels):
     t0 = time()
     estimator = make_pipeline(StandardScaler(), gm).fit(data)
     fit_time = time() - t0
-    results = [name, fit_time, estimator[-1].inertia_]
+    results = [name, fit_time, estimator[-1].bic(data), estimator[-1].aic(data)]
 
     # Define the metrics which require only the true labels and estimator
     # labels
+    pred = gm.predict(data)
+
     clustering_metrics = [
-        metrics.homogeneity_score,
-        metrics.completeness_score,
-        metrics.v_measure_score,
         metrics.adjusted_rand_score,
         metrics.adjusted_mutual_info_score,
     ]
-    results += [m(labels, estimator[-1].labels_) for m in clustering_metrics]
+    results += [m(labels, pred) for m in clustering_metrics]
 
     # The silhouette score requires the full dataset
     results += [
-        metrics.silhouette_score(data, estimator[-1].labels_, metric="euclidean", sample_size=300, )
+        metrics.silhouette_score(data, pred)
     ]
 
     # Show the results
-    formatter_result = ("{:9s}\t{:.3f}s\t{:.0f}\t{:.3f}\t{:.3f}"
-                        "\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}")
+    formatter_result = "{:9s}\t{:.3f}s\t{:.0f}\t{:.0f}\t{:.3f}\t{:.3f}\t{:.3f}"
     print(formatter_result.format(*results))
 
 
@@ -264,10 +262,11 @@ def do_k_means(X, y, n_classes):
 
 def do_em(X, y, n_classes):
     print(82 * '_')
-    print('init\t\ttime\tinertia\thomo\tcompl\tv-meas\tARI\t\tAMI\t\tsilhouette')
+    print('init\t\ttime\tbic\t\t\t\taic\t\t\t\tARI\t\tAMI\t\tsilhouette')
 
     gm = GaussianMixture(n_components=n_classes, random_state=1)
     bench_em(gm, name="baseline", data=X, labels=y)
+
 
 def do_pca(X_train, X_test, n_components):
     pca = PCA(n_components=n_components, svd_solver='auto', whiten=True, random_state=1).fit(X_train)
@@ -361,7 +360,7 @@ if __name__ == '__main__':
     if XFORM.__contains__('PCA'):
         X_train_transform, X_test_transform = do_pca(X_train, X_test)
 
-    # do_k_means(X_orig, y_orig, n_classes)
+    do_k_means(X_orig, y_orig, n_classes)
 
     do_em(X_orig, y_orig, n_classes)
 

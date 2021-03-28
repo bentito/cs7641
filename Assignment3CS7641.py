@@ -5,6 +5,8 @@ from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import make_pipeline
 from sklearn.cluster import KMeans
 from sklearn import metrics
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_selection import SelectFromModel
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.mixture import GaussianMixture
 from sklearn.model_selection import train_test_split, learning_curve, ShuffleSplit
@@ -245,17 +247,21 @@ def do_k_means(X, y, n_classes):
     kmeans = KMeans(init="random", n_clusters=n_classes, n_init=4, random_state=0)
     bench_k_means(kmeans=kmeans, name="random", data=X, labels=y)
 
-    _, _, pca = do_pca(X, None, n_components=n_classes)
-    kmeans = KMeans(init=pca.components_, n_clusters=n_classes, n_init=1)
-    bench_k_means(kmeans=kmeans, name="PCA-based", data=X, labels=y)
+    X_transform, _, pca = do_pca(X, None, n_components=n_classes)
+    kmeans = KMeans(init="k-means++", n_clusters=n_classes, n_init=1)
+    bench_k_means(kmeans=kmeans, name="PCA-based", data=X_transform, labels=y)
 
-    ica = do_ica(X, n_components=n_classes)
-    kmeans = KMeans(init=ica.components_, n_clusters=n_classes, n_init=1)
-    bench_k_means(kmeans=kmeans, name="ICA-based", data=X, labels=y)
+    X_transform, ica = do_ica(X, n_components=n_classes)
+    kmeans = KMeans(init="k-means++", n_clusters=n_classes, n_init=1)
+    bench_k_means(kmeans=kmeans, name="ICA-based", data=X_transform, labels=y)
 
-    rand_proj = do_randomized_projections(X, n_components=n_classes)
-    kmeans = KMeans(init=rand_proj.components_, n_clusters=n_classes, n_init=1)
-    bench_k_means(kmeans=kmeans, name="rnd-proj", data=X, labels=y)
+    X_transform, rand_proj = do_randomized_projections(X, n_components=n_classes)
+    kmeans = KMeans(init="k-means++", n_clusters=n_classes, n_init=1)
+    bench_k_means(kmeans=kmeans, name="rnd-proj", data=X_transform, labels=y)
+
+    X_transform = do_learn_from_model(X, y, n_components=n_classes)
+    kmeans = KMeans(init="k-means++", n_clusters=n_classes, n_init=1)
+    bench_k_means(kmeans=kmeans, name="lfm", data=X_transform, labels=y)
 
     print(82 * '_')
 
@@ -278,20 +284,26 @@ def do_pca(X_train, X_test, n_components):
 
 
 def do_ica(X, n_components):
-    ica = FastICA(n_components=n_components, algorithm='deflation', whiten=True, fun='logcosh', fun_args=None, max_iter=200,
-            tol=0.001, w_init=None, random_state=1)
-    ica.fit_transform(X)
-    return ica
+    ica = FastICA(n_components=n_components, algorithm='deflation', whiten=True, fun='logcosh', fun_args=None,
+                  max_iter=200,
+                  tol=0.001, w_init=None, random_state=1)
+    X_transform = ica.fit_transform(X)
+    return X_transform, ica
 
 
 def do_randomized_projections(X, n_components):
     rand_proj = random_projection.GaussianRandomProjection(n_components=n_components, random_state=1)
-    _ = rand_proj.fit_transform(X)
-    return rand_proj
+    X_transform = rand_proj.fit_transform(X)
+    return X_transform, rand_proj
 
 
-def do_some_other_feat_selection_algorithm(X_train_transform, X_test_transform):
-    pass
+def do_learn_from_model(X, y, n_components):
+    embeded_rf_selector = SelectFromModel(RandomForestClassifier(n_estimators=100), max_features=n_components)
+    embeded_rf_selector.fit(X, y)
+
+    embeded_rf_support = embeded_rf_selector.get_support()
+    X_transform = X[:, embeded_rf_support]
+    return X_transform
 
 
 def do_the_grid(data_set):

@@ -213,7 +213,10 @@ def bench_em(gm, name, data, labels):
         supervision.
     """
     t0 = time()
-    estimator = make_pipeline(StandardScaler(), gm).fit(data)
+    if name != 'ica' and name != 'rnd-proj':
+        estimator = make_pipeline(StandardScaler(), gm).fit(data)
+    else:
+        estimator = make_pipeline(None, gm).fit(data)
     fit_time = time() - t0
     results = [name, fit_time, estimator[-1].bic(data), estimator[-1].aic(data)]
 
@@ -233,45 +236,55 @@ def bench_em(gm, name, data, labels):
     ]
 
     # Show the results
-    formatter_result = "{:9s}\t{:.3f}s\t{:.0f}\t{:.0f}\t{:.3f}\t{:.3f}\t{:.3f}"
+    formatter_result = "{:9s}\t{:.3f}s\t{:17.1f}\t{:17.1f}\t{:.3f}\t{:.3f}\t{:4.3f}"
     print(formatter_result.format(*results))
 
 
 def do_k_means(X, y, n_classes):
-    print(82 * '_')
+    global X_transform_pca, X_transform_ica, X_transform_rand, X_transform_lfm
+    print(90 * '_')
     print('init\t\ttime\tinertia\thomo\tcompl\tv-meas\tARI\t\tAMI\t\tsilhouette')
 
-    kmeans = KMeans(init="k-means++", n_clusters=n_classes, n_init=4, random_state=0)
+    kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="k-means++", data=X, labels=y)
 
-    kmeans = KMeans(init="random", n_clusters=n_classes, n_init=4, random_state=0)
+    kmeans = KMeans(init="random", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="random", data=X, labels=y)
 
-    X_transform, _, pca = do_pca(X, None, n_components=n_classes)
-    kmeans = KMeans(init="k-means++", n_clusters=n_classes, n_init=1)
-    bench_k_means(kmeans=kmeans, name="PCA-based", data=X_transform, labels=y)
+    X_transform_pca, _, pca = do_pca(X, None, n_components=n_classes)
+    kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
+    bench_k_means(kmeans=kmeans, name="PCA-based", data=X_transform_pca, labels=y)
 
-    X_transform, ica = do_ica(X, n_components=n_classes)
-    kmeans = KMeans(init="k-means++", n_clusters=n_classes, n_init=1)
-    bench_k_means(kmeans=kmeans, name="ICA-based", data=X_transform, labels=y)
+    X_transform_ica, ica = do_ica(X, n_components=n_classes)
+    kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
+    bench_k_means(kmeans=kmeans, name="ICA-based", data=X_transform_ica, labels=y)
 
-    X_transform, rand_proj = do_randomized_projections(X, n_components=n_classes)
-    kmeans = KMeans(init="k-means++", n_clusters=n_classes, n_init=1)
-    bench_k_means(kmeans=kmeans, name="rnd-proj", data=X_transform, labels=y)
+    X_transform_rand, rand_proj = do_randomized_projections(X, n_components=n_classes)
+    kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
+    bench_k_means(kmeans=kmeans, name="rnd-proj", data=X_transform_rand, labels=y)
 
-    X_transform = do_learn_from_model(X, y, n_components=n_classes)
-    kmeans = KMeans(init="k-means++", n_clusters=n_classes, n_init=1)
-    bench_k_means(kmeans=kmeans, name="lfm", data=X_transform, labels=y)
-
-    print(82 * '_')
+    X_transform_lfm = do_learn_from_model(X, y, n_components=n_classes)
+    kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
+    bench_k_means(kmeans=kmeans, name="lfm", data=X_transform_lfm, labels=y)
 
 
 def do_em(X, y, n_classes):
-    print(82 * '_')
-    print('init\t\ttime\tbic\t\t\t\taic\t\t\t\tARI\t\tAMI\t\tsilhouette')
+    """
+    must exec do_k_means() first to fill global transform results
+    """
+    print(90 * '_')
+    print('init\t\ttime\tbic\t\t\t\t\taic\t\t\t\t\tARI\t\tAMI\t\tsilhouette')
 
     gm = GaussianMixture(n_components=n_classes, random_state=1)
-    bench_em(gm, name="baseline", data=X, labels=y)
+    bench_em(gm, name="base EM", data=X, labels=y)
+
+    bench_em(gm, name="pca", data=X_transform_pca, labels=y)
+
+    bench_em(gm, name="ica", data=X_transform_ica, labels=y)
+
+    bench_em(gm, name="rnd-proj", data=X_transform_rand, labels=y)
+
+    bench_em(gm, name="lfm", data=X_transform_lfm, labels=y)
 
 
 def do_pca(X_train, X_test, n_components):
@@ -298,7 +311,7 @@ def do_randomized_projections(X, n_components):
 
 
 def do_learn_from_model(X, y, n_components):
-    embeded_rf_selector = SelectFromModel(RandomForestClassifier(n_estimators=100), max_features=n_components)
+    embeded_rf_selector = SelectFromModel(RandomForestClassifier(n_estimators=300, random_state=1), max_features=n_components)
     embeded_rf_selector.fit(X, y)
 
     embeded_rf_support = embeded_rf_selector.get_support()

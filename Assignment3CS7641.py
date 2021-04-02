@@ -142,14 +142,14 @@ def plot_learning_curve(estimator, title, X, y, axes=None, ylim=None, cv=None,
     return plt
 
 
-def do_nn(dataset):
+def do_nn(dataset, X_train, y_train, X_test, y_test):
     if dataset == 'faces':
         nn_model = MLPClassifier(alpha=0.05, hidden_layer_sizes=(20,), learning_rate='adaptive', max_iter=500)
     if dataset == 'forest':
         nn_model = MLPClassifier(activation='tanh', alpha=0.05, hidden_layer_sizes=(20,),
                                  learning_rate='adaptive', max_iter=500)
-    nn_model.fit(X_train_transform, y_train)
-    nn_predict = nn_model.predict(X_test_transform)
+    nn_model.fit(X_train, y_train)
+    nn_predict = nn_model.predict(X_test)
     print(classification_report(y_test, nn_predict))
     print(confusion_matrix(y_test, nn_predict))
 
@@ -189,7 +189,7 @@ def bench_k_means(kmeans, name, data, labels):
 
     # The silhouette score requires the full dataset
     results += [
-        metrics.silhouette_score(data, estimator[-1].labels_, metric="euclidean", sample_size=300, )
+        metrics.silhouette_score(data, estimator[-1].labels_, metric="euclidean", sample_size=50000)
     ]
 
     # Show the results
@@ -234,20 +234,20 @@ def bench_em(gm, name, data, labels):
     results += [m(labels, pred) for m in clustering_metrics]
 
     # The silhouette score requires the full dataset
-    if len(data[0:]) < 5000:  # too slow for forest
+    if len(np.unique(pred)) > 1:  # if it only predicted 1 label silhouette will fail
         results += [
-            metrics.silhouette_score(data, pred)
+            metrics.silhouette_score(data, pred, sample_size=50000, random_state=1)
         ]
     else:
         results += [
-            0.999
+            0.000
         ]
     # Show the results
     formatter_result = "{:9s}\t{:.3f}s\t{:17.1f}\t{:17.1f}\t{:.3f}\t{:.3f}\t{:4.3f}"
     print(formatter_result.format(*results))
 
 
-def do_k_means(X, y, n_classes):
+def do_k_means(X, y, X_trainlfm, y_train_lfm, n_classes):
     global X_transform_pca, X_transform_ica, X_transform_rand, X_transform_lfm
     print(90 * '_')
     print('init\t\ttime\tinertia\thomo\tcompl\tv-meas\tARI\t\tAMI\t\tsilhouette')
@@ -280,14 +280,15 @@ def do_k_means(X, y, n_classes):
     bench_k_means(kmeans=kmeans, name="rnd-proj", data=X_transform_rand, labels=y)
 
     t0 = time()
-    X_transform_lfm = do_learn_from_model(X, y, n_components=n_classes)
+    # learn from training answers not full data set, or it's cheating
+    X_transform_lfm = do_learn_from_model(X_train_lfm, y_train_lfm, n_components=n_classes)
     project_time = time() - t0
     print('lfm took %5.3fs' % project_time)
     kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
-    bench_k_means(kmeans=kmeans, name="lfm", data=X_transform_lfm, labels=y)
+    bench_k_means(kmeans=kmeans, name="lfm", data=X_transform_lfm, labels=y_train_lfm)
 
 
-def do_em(X, y, n_classes):
+def do_em(X, y, y_train_lfm, n_classes):
     """
     must exec do_k_means() first to fill global transform results
     """
@@ -296,7 +297,7 @@ def do_em(X, y, n_classes):
     if len(X[0:]) < 5000:  # don't do verbose output for faces data, not needed and hits div by zero bug (nice!)
         gm = GaussianMixture(n_components=n_classes, random_state=1)
     else:
-        gm = GaussianMixture(n_components=n_classes, random_state=1, warm_start=True, verbose=2, verbose_interval=1)
+        gm = GaussianMixture(n_components=n_classes, random_state=1, warm_start=True, verbose=2, verbose_interval=10)
     if len(X[0:]) < 5000:  # this takes too long to do without dimensions reduced
         bench_em(gm, name="base EM", data=X, labels=y)
 
@@ -306,7 +307,7 @@ def do_em(X, y, n_classes):
 
     bench_em(gm, name="rnd-proj", data=X_transform_rand, labels=y)
 
-    bench_em(gm, name="lfm", data=X_transform_lfm, labels=y)
+    bench_em(gm, name="lfm", data=X_transform_lfm, labels=y_train_lfm)
 
 
 def do_pca(X_train, X_test, n_components):
@@ -383,9 +384,13 @@ def get_the_data(dataset):
         n_classes = len(target_names)
     if dataset == 'faces':
         X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+        X_train_lfm, X_test_lfm, y_train_lfm, y_test_lfm = train_test_split(X, y, train_size=0.5, test_size=0.5,
+                                                                            random_state=1)
     if dataset == 'forest':
         X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=5000, test_size=10000, random_state=1)
-    return target_names, n_classes, X_train, X_test, y_train, y_test, X_orig, y_orig
+        X_train_lfm, X_test_lfm, y_train_lfm, y_test_lfm = train_test_split(X, y, train_size=0.5, test_size=0.5,
+                                                                            random_state=1)
+    return target_names, n_classes, X_train, X_test, y_train, y_test, X_orig, y_orig, X_train_lfm, y_train_lfm
 
 
 class Log:
@@ -403,18 +408,19 @@ if __name__ == '__main__':
     logging.info("starting run")
     # request data set as "faces" or "forest"
     data_set = sys.argv[1]
-    target_names, n_classes, X_train, X_test, y_train, y_test, X_orig, y_orig = get_the_data(data_set)
+    target_names, n_classes, X_train, X_test, y_train, y_test, X_orig, y_orig, X_train_lfm, y_train_lfm = \
+        get_the_data(data_set)
 
     DO_LEARNING_CURVES = False
 
-    do_k_means(X_orig, y_orig, n_classes)
+    do_k_means(X_orig, y_orig, X_train_lfm, y_train_lfm, n_classes)
 
-    do_em(X_orig, y_orig, n_classes)
+    do_em(X_orig, y_orig, y_train_lfm, n_classes)
 
     # TODO
     do_the_grid(data_set)
 
-    do_nn(data_set)
+    do_nn(data_set, X_train, y_train, X_test, y_test)
 
     if DO_LEARNING_CURVES:
         fig, axes = plt.subplots(3, 2, figsize=(10, 15))

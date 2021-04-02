@@ -8,7 +8,9 @@ cd cs7641
 python -m pip install -r requirements.txt
 
 run:
-Assignment2CS7641.py
+Assignment2CS7641.py <dataset_name>
+
+where: dataset_name = "faces" or "forest"
 
 NB: There are flags that are settable in the source to choose:
 

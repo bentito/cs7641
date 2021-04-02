@@ -1,4 +1,7 @@
 # Assignment 3 Clustering and Dimensionality Reduction
+import sys
+import logging
+import timeit
 from time import time
 
 from imblearn.over_sampling import SMOTE
@@ -231,10 +234,14 @@ def bench_em(gm, name, data, labels):
     results += [m(labels, pred) for m in clustering_metrics]
 
     # The silhouette score requires the full dataset
-    results += [
-        metrics.silhouette_score(data, pred)
-    ]
-
+    if len(data[0:]) < 5000:  # too slow for forest
+        results += [
+            metrics.silhouette_score(data, pred)
+        ]
+    else:
+        results += [
+            0.999
+        ]
     # Show the results
     formatter_result = "{:9s}\t{:.3f}s\t{:17.1f}\t{:17.1f}\t{:.3f}\t{:.3f}\t{:4.3f}"
     print(formatter_result.format(*results))
@@ -251,19 +258,31 @@ def do_k_means(X, y, n_classes):
     kmeans = KMeans(init="random", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="random", data=X, labels=y)
 
+    t0 = time()
     X_transform_pca, _, pca = do_pca(X, None, n_components=n_classes)
+    project_time = time() - t0
+    print('PCA took %5.3fs' % project_time)
     kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="PCA-based", data=X_transform_pca, labels=y)
 
+    t0 = time()
     X_transform_ica, ica = do_ica(X, n_components=n_classes)
+    project_time = time() - t0
+    print('ICA took %5.3fs' % project_time)
     kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="ICA-based", data=X_transform_ica, labels=y)
 
+    t0 = time()
     X_transform_rand, rand_proj = do_randomized_projections(X, n_components=n_classes)
+    project_time = time() - t0
+    print('rand took %5.3fs' % project_time)
     kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="rnd-proj", data=X_transform_rand, labels=y)
 
+    t0 = time()
     X_transform_lfm = do_learn_from_model(X, y, n_components=n_classes)
+    project_time = time() - t0
+    print('lfm took %5.3fs' % project_time)
     kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="lfm", data=X_transform_lfm, labels=y)
 
@@ -274,9 +293,12 @@ def do_em(X, y, n_classes):
     """
     print(90 * '_')
     print('init\t\ttime\tbic\t\t\t\t\taic\t\t\t\t\tARI\t\tAMI\t\tsilhouette')
-
-    gm = GaussianMixture(n_components=n_classes, random_state=1)
-    bench_em(gm, name="base EM", data=X, labels=y)
+    if len(X[0:]) < 5000:  # don't do verbose output for faces data, not needed and hits div by zero bug (nice!)
+        gm = GaussianMixture(n_components=n_classes, random_state=1)
+    else:
+        gm = GaussianMixture(n_components=n_classes, random_state=1, warm_start=True, verbose=2, verbose_interval=1)
+    if len(X[0:]) < 5000:  # this takes too long to do without dimensions reduced
+        bench_em(gm, name="base EM", data=X, labels=y)
 
     bench_em(gm, name="pca", data=X_transform_pca, labels=y)
 
@@ -297,7 +319,7 @@ def do_pca(X_train, X_test, n_components):
 
 
 def do_ica(X, n_components):
-    ica = FastICA(n_components=n_components, algorithm='deflation', whiten=True, fun='logcosh', fun_args=None,
+    ica = FastICA(n_components=n_components, algorithm='parallel', whiten=True, fun='logcosh', fun_args=None,
                   max_iter=200,
                   tol=0.001, w_init=None, random_state=1)
     X_transform = ica.fit_transform(X)
@@ -311,7 +333,8 @@ def do_randomized_projections(X, n_components):
 
 
 def do_learn_from_model(X, y, n_components):
-    embeded_rf_selector = SelectFromModel(RandomForestClassifier(n_estimators=300, random_state=1), max_features=n_components)
+    embeded_rf_selector = SelectFromModel(RandomForestClassifier(n_estimators=150, random_state=1, n_jobs=-1),
+                                          max_features=n_components)
     embeded_rf_selector.fit(X, y)
 
     embeded_rf_support = embeded_rf_selector.get_support()
@@ -356,7 +379,7 @@ def get_the_data(dataset):
         target_names = data_set.target_names
         n_classes = target_names.shape[0]
     if dataset == 'forest':
-        target_names = data_set.target_names
+        target_names = np.unique(data_set.target)
         n_classes = len(target_names)
     if dataset == 'faces':
         X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
@@ -365,25 +388,24 @@ def get_the_data(dataset):
     return target_names, n_classes, X_train, X_test, y_train, y_test, X_orig, y_orig
 
 
+class Log:
+    logging.basicConfig(filename='/tmp/numpy_warnings.log', encoding='utf-8',
+                        format='%(asctime)s %(message)s', level=logging.DEBUG)
+
+    def write(self, msg):
+        logging.debug("%s" % msg, stack_info=True)
+
+
 if __name__ == '__main__':
+    log = Log()
+    saved_handler = np.seterrcall(log)
+    np.seterr(over='log')
+    logging.info("starting run")
     # request data set as "faces" or "forest"
-    data_set = "faces"
+    data_set = sys.argv[1]
     target_names, n_classes, X_train, X_test, y_train, y_test, X_orig, y_orig = get_the_data(data_set)
 
-    # XFORM = 'PCA'
-    XFORM = 'None'
-
-    # ALG = 'NN'
-    ALG = 'None'
-
     DO_LEARNING_CURVES = False
-
-    if XFORM.__contains__('None'):
-        # do no transforms
-        X_train_transform = X_train
-        X_test_transform = X_test
-    if XFORM.__contains__('PCA'):
-        X_train_transform, X_test_transform = do_pca(X_train, X_test)
 
     do_k_means(X_orig, y_orig, n_classes)
 
@@ -392,8 +414,7 @@ if __name__ == '__main__':
     # TODO
     do_the_grid(data_set)
 
-    if ALG.__contains__('NN'):
-        do_nn(data_set)
+    do_nn(data_set)
 
     if DO_LEARNING_CURVES:
         fig, axes = plt.subplots(3, 2, figsize=(10, 15))

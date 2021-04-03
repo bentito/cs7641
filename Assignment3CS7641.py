@@ -247,8 +247,34 @@ def bench_em(gm, name, data, labels):
     print(formatter_result.format(*results))
 
 
-def do_k_means(X, y, X_trainlfm, y_train_lfm, n_classes):
+def setup_projections(X, X_train_lfm, y_train_lfm, n_classes):
+    """
+    must call before using global projection transforms
+    """
     global X_transform_pca, X_transform_ica, X_transform_rand, X_transform_lfm
+    t0 = time()
+    X_transform_pca, _, pca = do_pca(X, None, n_components=n_classes)
+    project_time = time() - t0
+    print('PCA took %5.3fs' % project_time)
+
+    t0 = time()
+    X_transform_ica, ica = do_ica(X, n_components=n_classes)
+    project_time = time() - t0
+    print('ICA took %5.3fs' % project_time)
+
+    t0 = time()
+    X_transform_rand, rand_proj = do_randomized_projections(X, n_components=n_classes)
+    project_time = time() - t0
+    print('rand took %5.3fs' % project_time)
+
+    t0 = time()
+    # learn from training answers not full data set, or it's cheating
+    X_transform_lfm = do_learn_from_model(X_train_lfm, y_train_lfm, n_components=n_classes)
+    project_time = time() - t0
+    print('lfm took %5.3fs' % project_time)
+
+
+def do_k_means(X, y, y_train_lfm, n_classes):
     print(90 * '_')
     print('init\t\ttime\tinertia\thomo\tcompl\tv-meas\tARI\t\tAMI\t\tsilhouette')
 
@@ -258,32 +284,15 @@ def do_k_means(X, y, X_trainlfm, y_train_lfm, n_classes):
     kmeans = KMeans(init="random", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="random", data=X, labels=y)
 
-    t0 = time()
-    X_transform_pca, _, pca = do_pca(X, None, n_components=n_classes)
-    project_time = time() - t0
-    print('PCA took %5.3fs' % project_time)
     kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="PCA-based", data=X_transform_pca, labels=y)
 
-    t0 = time()
-    X_transform_ica, ica = do_ica(X, n_components=n_classes)
-    project_time = time() - t0
-    print('ICA took %5.3fs' % project_time)
     kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="ICA-based", data=X_transform_ica, labels=y)
 
-    t0 = time()
-    X_transform_rand, rand_proj = do_randomized_projections(X, n_components=n_classes)
-    project_time = time() - t0
-    print('rand took %5.3fs' % project_time)
     kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="rnd-proj", data=X_transform_rand, labels=y)
 
-    t0 = time()
-    # learn from training answers not full data set, or it's cheating
-    X_transform_lfm = do_learn_from_model(X_train_lfm, y_train_lfm, n_components=n_classes)
-    project_time = time() - t0
-    print('lfm took %5.3fs' % project_time)
     kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="lfm", data=X_transform_lfm, labels=y_train_lfm)
 
@@ -343,8 +352,22 @@ def do_learn_from_model(X, y, n_components):
     return X_transform
 
 
-def do_the_grid(data_set):
-    pass
+def do_the_grid(override_data_set):
+    if override_data_set == None:
+        data_set = ['faces', 'forest']
+    else:
+        data_set = [override_data_set]
+    for curr_data_set in data_set:
+        print('working on data set: ', curr_data_set)
+        target_names, n_classes, X_train, X_test, y_train, y_test, X_orig, y_orig, X_train_lfm, y_train_lfm = \
+            get_the_data(curr_data_set)
+
+        setup_projections(X_orig, X_train_lfm, y_train_lfm, n_classes)
+
+        do_k_means(X_orig, y_orig, y_train_lfm, n_classes)
+        do_em(X_orig, y_orig, y_train_lfm, n_classes)
+
+        do_nn(curr_data_set, X_train, y_train, X_test, y_test)
 
 
 def get_the_data(dataset):
@@ -406,25 +429,19 @@ if __name__ == '__main__':
     saved_handler = np.seterrcall(log)
     np.seterr(over='log')
     logging.info("starting run")
-    # request data set as "faces" or "forest"
-    data_set = sys.argv[1]
-    target_names, n_classes, X_train, X_test, y_train, y_test, X_orig, y_orig, X_train_lfm, y_train_lfm = \
-        get_the_data(data_set)
+    # request data set as "faces" or "forest", in none passed, do both
+    if len(sys.argv) > 1:
+        data_set = sys.argv[1]
+    else:
+        data_set = None
+
+    do_the_grid(data_set)
 
     DO_LEARNING_CURVES = False
 
-    do_k_means(X_orig, y_orig, X_train_lfm, y_train_lfm, n_classes)
-
-    do_em(X_orig, y_orig, y_train_lfm, n_classes)
-
-    # TODO
-    do_the_grid(data_set)
-
-    do_nn(data_set, X_train, y_train, X_test, y_test)
-
-    if DO_LEARNING_CURVES:
-        fig, axes = plt.subplots(3, 2, figsize=(10, 15))
-        title = r"Learning Curves (" + data_set + "_" + ALG + ")"
-        cv = ShuffleSplit(n_splits=10, test_size=0.2, random_state=0)
-        # plot_learning_curve(ada_model, title, X_train_transform, y_train, axes=axes[:, 0], ylim=(0.5, 1.01), cv=cv, n_jobs=-1)
-        plt.show()
+    # if DO_LEARNING_CURVES:
+    #     fig, axes = plt.subplots(3, 2, figsize=(10, 15))
+    #     title = r"Learning Curves (" + data_set + "_" + ALG + ")"
+    #     cv = ShuffleSplit(n_splits=10, test_size=0.2, random_state=0)
+    #     # plot_learning_curve(ada_model, title, X_train_transform, y_train, axes=axes[:, 0], ylim=(0.5, 1.01), cv=cv, n_jobs=-1)
+    #     plt.show()

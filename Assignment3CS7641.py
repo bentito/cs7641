@@ -142,16 +142,51 @@ def plot_learning_curve(estimator, title, X, y, axes=None, ylim=None, cv=None,
     return plt
 
 
-def do_nn(dataset, X_train, y_train, X_test, y_test):
+def do_nn(dataset, X_train, y_train, X_test, y_test, pca_components, ica_components, rand_components, lfm_components):
     if dataset == 'faces':
         nn_model = MLPClassifier(alpha=0.05, hidden_layer_sizes=(20,), learning_rate='adaptive', max_iter=500)
     if dataset == 'forest':
         nn_model = MLPClassifier(activation='tanh', alpha=0.05, hidden_layer_sizes=(20,),
                                  learning_rate='adaptive', max_iter=500)
+    print("** NN for unreduced/unprojected data set")
     nn_model.fit(X_train, y_train)
     nn_predict = nn_model.predict(X_test)
     print(classification_report(y_test, nn_predict))
     print(confusion_matrix(y_test, nn_predict))
+
+    print("** NN for PCA reduced data set")
+    X_train_pca, _, _ = do_pca(X_train, None, pca_components)
+    nn_model.fit(X_train_pca, y_train)
+    X_test_pca, _, _ = do_pca(X_test, None, pca_components)
+    nn_predict = nn_model.predict(X_test_pca)
+    print(classification_report(y_test, nn_predict))
+    print(confusion_matrix(y_test, nn_predict))
+
+    print("** NN for ICA reduced data set")
+    X_train_ica, _ = do_ica(X_train, ica_components)
+    nn_model.fit(X_train_ica, y_train)
+    X_test_ica, _ = do_ica(X_test, ica_components)
+    nn_predict = nn_model.predict(X_test_ica)
+    print(classification_report(y_test, nn_predict))
+    print(confusion_matrix(y_test, nn_predict))
+
+    print("** NN for Random Projection reduced data set")
+    X_train_rand, _ = do_randomized_projections(X_train, rand_components)
+    nn_model.fit(X_train_rand, y_train)
+    X_test_rand, _ = do_randomized_projections(X_test, rand_components)
+    nn_predict = nn_model.predict(X_test_rand)
+    print(classification_report(y_test, nn_predict))
+    print(confusion_matrix(y_test, nn_predict))
+
+    print("** NN for Learn From Model reduced data set")
+    X_train_lfm = do_learn_from_model(X_train, y_train, lfm_components)
+    nn_model.fit(X_train_lfm, y_train)
+    X_test_lfm = do_learn_from_model(X_test, y_test, lfm_components)  # hmm to make the test values, need the answers
+    nn_predict = nn_model.predict(X_test_lfm)
+    print(classification_report(y_test, nn_predict))
+    print(confusion_matrix(y_test, nn_predict))
+
+    # TODO Need to make results of kmeans and EM available as X-train data and run NN for both
 
 
 def bench_k_means(kmeans, name, data, labels):
@@ -247,29 +282,29 @@ def bench_em(gm, name, data, labels):
     print(formatter_result.format(*results))
 
 
-def setup_projections(X, X_train_lfm, y_train_lfm, n_classes):
+def setup_projections(X, X_train_lfm, y_train_lfm, pca_components, ica_compoonents, rand_components, lfm_components):
     """
     must call before using global projection transforms
     """
     global X_transform_pca, X_transform_ica, X_transform_rand, X_transform_lfm
     t0 = time()
-    X_transform_pca, _, pca = do_pca(X, None, n_components=n_classes)
+    X_transform_pca, _, pca = do_pca(X, None, n_components=pca_components)
     project_time = time() - t0
     print('PCA took %5.3fs' % project_time)
 
     t0 = time()
-    X_transform_ica, ica = do_ica(X, n_components=n_classes)
+    X_transform_ica, ica = do_ica(X, n_components=ica_compoonents)
     project_time = time() - t0
     print('ICA took %5.3fs' % project_time)
 
     t0 = time()
-    X_transform_rand, rand_proj = do_randomized_projections(X, n_components=n_classes)
+    X_transform_rand, rand_proj = do_randomized_projections(X, n_components=rand_components)
     project_time = time() - t0
     print('rand took %5.3fs' % project_time)
 
     t0 = time()
     # learn from training answers not full data set, or it's cheating
-    X_transform_lfm = do_learn_from_model(X_train_lfm, y_train_lfm, n_components=n_classes)
+    X_transform_lfm = do_learn_from_model(X_train_lfm, y_train_lfm, n_components=lfm_components)
     project_time = time() - t0
     print('lfm took %5.3fs' % project_time)
 
@@ -354,7 +389,7 @@ def do_learn_from_model(X, y, n_components):
 
 def do_the_grid(override_data_set):
     if override_data_set == None:
-        data_set = ['faces', 'forest']
+        data_set = ['faces', 'forest']  # have the more interesting data set last so projected data sets for it for NN
     else:
         data_set = [override_data_set]
     for curr_data_set in data_set:
@@ -362,12 +397,19 @@ def do_the_grid(override_data_set):
         target_names, n_classes, X_train, X_test, y_train, y_test, X_orig, y_orig, X_train_lfm, y_train_lfm = \
             get_the_data(curr_data_set)
 
-        setup_projections(X_orig, X_train_lfm, y_train_lfm, n_classes)
+        pca_components = n_classes
+        ica_compoonents = n_classes
+        rand_components = n_classes
+        lfm_components = n_classes
+
+        setup_projections(X_orig, X_train_lfm, y_train_lfm,
+                          pca_components, ica_compoonents, rand_components, lfm_components)
 
         do_k_means(X_orig, y_orig, y_train_lfm, n_classes)
         do_em(X_orig, y_orig, y_train_lfm, n_classes)
 
-        do_nn(curr_data_set, X_train, y_train, X_test, y_test)
+        do_nn(curr_data_set, X_train, y_train, X_test, y_test,
+              pca_components, ica_compoonents, rand_components, lfm_components)
 
 
 def get_the_data(dataset):

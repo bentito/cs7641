@@ -193,8 +193,8 @@ def plot_learning_curve(estimator, title, X, y, axes=None, ylim=None, cv=None,
 
 
 if __name__ == '__main__':
-    DATA_SET = "forest"
-    # DATA_SET = "faces"
+    # DATA_SET = "forest"
+    DATA_SET = "faces"
 
     if DATA_SET == 'faces':
         # init Labeled Faces in the Wild dataset

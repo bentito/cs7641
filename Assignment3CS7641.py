@@ -148,13 +148,13 @@ def do_nn(dataset, X_train, y_train, X_test, y_test, pca_components, ica_compone
     if dataset == 'forest':
         nn_model = MLPClassifier(activation='tanh', alpha=0.05, hidden_layer_sizes=(20,),
                                  learning_rate='adaptive', max_iter=500)
-    print("** NN for unreduced/unprojected data set")
+    print("** NN for unreduced/unprojected data set: " + dataset)
     nn_model.fit(X_train, y_train)
     nn_predict = nn_model.predict(X_test)
     print(classification_report(y_test, nn_predict))
     print(confusion_matrix(y_test, nn_predict))
 
-    print("** NN for PCA reduced data set")
+    print("** NN for PCA reduced data set: " + dataset)
     X_train_pca, _, _ = do_pca(X_train, None, pca_components)
     nn_model.fit(X_train_pca, y_train)
     X_test_pca, _, _ = do_pca(X_test, None, pca_components)
@@ -162,7 +162,7 @@ def do_nn(dataset, X_train, y_train, X_test, y_test, pca_components, ica_compone
     print(classification_report(y_test, nn_predict))
     print(confusion_matrix(y_test, nn_predict))
 
-    print("** NN for ICA reduced data set")
+    print("** NN for ICA reduced data set: " + dataset)
     X_train_ica, _ = do_ica(X_train, ica_components)
     nn_model.fit(X_train_ica, y_train)
     X_test_ica, _ = do_ica(X_test, ica_components)
@@ -170,7 +170,7 @@ def do_nn(dataset, X_train, y_train, X_test, y_test, pca_components, ica_compone
     print(classification_report(y_test, nn_predict))
     print(confusion_matrix(y_test, nn_predict))
 
-    print("** NN for Random Projection reduced data set")
+    print("** NN for Random Projection reduced data set: " + dataset)
     X_train_rand, _ = do_randomized_projections(X_train, rand_components)
     nn_model.fit(X_train_rand, y_train)
     X_test_rand, _ = do_randomized_projections(X_test, rand_components)
@@ -178,7 +178,7 @@ def do_nn(dataset, X_train, y_train, X_test, y_test, pca_components, ica_compone
     print(classification_report(y_test, nn_predict))
     print(confusion_matrix(y_test, nn_predict))
 
-    print("** NN for Learn From Model reduced data set")
+    print("** NN for Learn From Model reduced data set: " + dataset)
     X_train_lfm = do_learn_from_model(X_train, y_train, lfm_components)
     nn_model.fit(X_train_lfm, y_train)
     X_test_lfm = do_learn_from_model(X_test, y_test, lfm_components)  # hmm to make the test values, need the answers
@@ -186,8 +186,21 @@ def do_nn(dataset, X_train, y_train, X_test, y_test, pca_components, ica_compone
     print(classification_report(y_test, nn_predict))
     print(confusion_matrix(y_test, nn_predict))
 
-    # TODO Need to make results of kmeans and EM available as X-train data and run NN for both
+    print("** NN with best kmeans: " + dataset)
+    X_train_kmeans = kmeans_ica.fit_transform(X_train)
+    nn_model.fit(X_train_kmeans, y_train)
+    X_test_kmeans = kmeans_ica.fit_transform(X_test)
+    nn_predict = nn_model.predict(X_test_kmeans)
+    print(classification_report(y_test, nn_predict))
+    print(confusion_matrix(y_test, nn_predict))
 
+    print("** NN with best EM: " + dataset)
+    X_train_em = em_estimator_ica.sample(X_train.shape[0])[0]
+    nn_model.fit(X_train_em, y_train)
+    X_test_em = em_estimator_ica.sample(X_test.shape[0])[0]
+    nn_predict = nn_model.predict(X_test_em)
+    print(classification_report(y_test, nn_predict))
+    print(confusion_matrix(y_test, nn_predict))
 
 def bench_k_means(kmeans, name, data, labels):
     """Benchmark to evaluate the KMeans initialization methods.
@@ -234,6 +247,7 @@ def bench_k_means(kmeans, name, data, labels):
 
 
 def bench_em(gm, name, data, labels):
+    global em_estimator_ica
     """Benchmark to evaluate the KMeans initialization methods.
 
     Parameters
@@ -255,6 +269,8 @@ def bench_em(gm, name, data, labels):
         estimator = make_pipeline(StandardScaler(), gm).fit(data)
     else:
         estimator = make_pipeline(None, gm).fit(data)
+        if name == 'ica':
+            em_estimator_ica = gm
     fit_time = time() - t0
     results = [name, fit_time, estimator[-1].bic(data), estimator[-1].aic(data)]
 
@@ -310,6 +326,7 @@ def setup_projections(X, X_train_lfm, y_train_lfm, pca_components, ica_compoonen
 
 
 def do_k_means(X, y, y_train_lfm, n_classes):
+    global kmeans_ica
     print(90 * '_')
     print('init\t\ttime\tinertia\thomo\tcompl\tv-meas\tARI\t\tAMI\t\tsilhouette')
 
@@ -322,8 +339,8 @@ def do_k_means(X, y, y_train_lfm, n_classes):
     kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="PCA-based", data=X_transform_pca, labels=y)
 
-    kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
-    bench_k_means(kmeans=kmeans, name="ICA-based", data=X_transform_ica, labels=y)
+    kmeans_ica = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
+    bench_k_means(kmeans=kmeans_ica, name="ICA-based", data=X_transform_ica, labels=y)
 
     kmeans = KMeans(init="k-means++", n_clusters=n_classes, random_state=0)
     bench_k_means(kmeans=kmeans, name="rnd-proj", data=X_transform_rand, labels=y)

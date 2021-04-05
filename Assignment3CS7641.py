@@ -173,9 +173,8 @@ def do_nn(dataset, X_train, y_train, X_test, y_test, pca_components, ica_compone
     print(confusion_matrix(y_test, nn_predict))
 
     print("** NN for Learn From Model reduced data set: " + dataset)
-    X_train_lfm = do_learn_from_model(X_train, y_train, lfm_components)
+    X_train_lfm, X_test_lfm = do_learn_from_model(X_train, y_train, lfm_components, X_test=X_test, y_test=y_test)
     nn_model.fit(X_train_lfm, y_train)
-    X_test_lfm = do_learn_from_model(X_test, y_test, lfm_components)  # hmm to make the test values, need the answers
     nn_predict = nn_model.predict(X_test_lfm)
     print(classification_report(y_test, nn_predict))
     print(confusion_matrix(y_test, nn_predict))
@@ -315,7 +314,7 @@ def setup_projections(X, X_train_lfm, y_train_lfm, pca_components, ica_compoonen
 
     t0 = time()
     # learn from training answers not full data set, or it's cheating
-    X_transform_lfm = do_learn_from_model(X_train_lfm, y_train_lfm, n_components=lfm_components)
+    X_transform_lfm, _ = do_learn_from_model(X_train_lfm, y_train_lfm, n_components=lfm_components, X_test=None, y_test=None)
     project_time = time() - t0
     print('lfm took %5.3fs' % project_time)
 
@@ -350,12 +349,7 @@ def do_em(X, y, y_train_lfm, n_classes):
     """
     print(90 * '_')
     print('init\ttime\tbic\taic\tARI\tAMI\tsilhouette')
-    if len(X[0:]) < 5000:  # don't do verbose output for faces data, not needed and hits div by zero bug (nice!)
-        gm = GaussianMixture(n_components=n_classes, random_state=1)
-    else:
-        gm = GaussianMixture(n_components=n_classes, random_state=1, warm_start=True, verbose=2, verbose_interval=10)
-    if len(X[0:]) < 5000:  # this takes too long to do without dimensions reduced
-        bench_em(gm, name="base EM", data=X, labels=y)
+    gm = GaussianMixture(n_components=n_classes, random_state=1)
 
     bench_em(gm, name="pca", data=X_transform_pca, labels=y)
 
@@ -392,14 +386,27 @@ def do_randomized_projections(X, n_components):
     return X_transform, rand_proj
 
 
-def do_learn_from_model(X, y, n_components):
+def do_learn_from_model(X, y, n_components, X_test=None, y_test=None):
     embeded_rf_selector = SelectFromModel(RandomForestClassifier(n_estimators=150, random_state=1, n_jobs=-1),
                                           max_features=n_components)
-    embeded_rf_selector.fit(X, y)
+    if X_test is None:
+        embeded_rf_selector.fit(X, y)
+        embeded_rf_support = embeded_rf_selector.get_support()
+        X_transform = X[:, embeded_rf_support]
+        return X_transform, None
+    else:
+        embeded_rf_selector.fit(X, y)
+        embeded_rf_support = embeded_rf_selector.get_support()
+        embeded_rf_selector.fit(X_test, y_test)
+        embeded_rf_support_test = embeded_rf_selector.get_support()
+        if np.count_nonzero(embeded_rf_support) < np.count_nonzero(embeded_rf_support_test):
+            X_transform = X[:, embeded_rf_support]
+            X_test_transform = X_test[:, embeded_rf_support]
+        else:
+            X_transform = X[:, embeded_rf_support_test]
+            X_test_transform = X_test[:, embeded_rf_support_test]
+        return X_transform, X_test_transform
 
-    embeded_rf_support = embeded_rf_selector.get_support()
-    X_transform = X[:, embeded_rf_support]
-    return X_transform
 
 
 def determine_num_components(curr_data_set, X_train, y_train, X_train_lfm, y_train_lfm, n_classes):
@@ -421,6 +428,23 @@ def determine_num_components(curr_data_set, X_train, y_train, X_train_lfm, y_tra
     return results[0][0]
 
 
+def get_best_k(X_train, y_train, y_train_lfm, n_classes):
+    mms = MinMaxScaler()
+    mms_X_train = mms.fit_transform(X_train)
+    sum_of_squared_distances = []
+    K = range(1, 40)
+    for k in K:
+        km = KMeans(init="k-means++", n_clusters=k, random_state=0)
+        km = km.fit(mms_X_train)
+        sum_of_squared_distances.append(km.inertia_)
+
+    plt.plot(K, sum_of_squared_distances, 'bx-')
+    plt.xlabel('k')
+    plt.ylabel('Sum_of_squared_distances')
+    plt.title('Elbow Method For Optimal k')
+    plt.show()
+
+
 def do_the_grid(override_data_set):
     if override_data_set == None:
         data_set = ['faces', 'forest']  # have the more interesting data set last so projected data sets for it for NN
@@ -431,34 +455,39 @@ def do_the_grid(override_data_set):
         target_names, n_classes, X_train, X_test, y_train, y_test, X_orig, y_orig, X_train_lfm, y_train_lfm = \
             get_the_data(curr_data_set)
 
-    # Use LBP features instead of raw pixel data for face images
-    if curr_data_set == 'faces':
-        from skimage.feature import local_binary_pattern
-        X_train_lbp = np.zeros_like(X_train)
-        X_test_lbp = np.zeros_like(X_test)
-        h = 50
-        w = 37
+        # Use LBP features instead of raw pixel data for face images
+        if curr_data_set == 'faces':
+            from skimage.feature import local_binary_pattern
+            X_train_lbp = np.zeros_like(X_train)
+            X_test_lbp = np.zeros_like(X_test)
+            h = 50
+            w = 37
 
-        for i, image in enumerate(X_train):
-            X_train_lbp[i] = np.ravel(local_binary_pattern(np.reshape(image, (h, w)), 24, 3, 'ror'))
-        for i, image in enumerate(X_test):
-            X_test_lbp[i] = np.ravel(local_binary_pattern(np.reshape(image, (h, w)), 24, 3, 'ror'))
+            for i, image in enumerate(X_train):
+                X_train_lbp[i] = np.ravel(local_binary_pattern(np.reshape(image, (h, w)), 24, 3, 'ror'))
+            for i, image in enumerate(X_test):
+                X_test_lbp[i] = np.ravel(local_binary_pattern(np.reshape(image, (h, w)), 24, 3, 'ror'))
 
-    pca_components = 0.95
+        pca_components = determine_num_components(curr_data_set, X_train, y_train, X_train_lfm, y_train_lfm, n_classes)
+        ica_compoonents = pca_components
+        rand_components = pca_components
+        lfm_components = pca_components
 
-    ica_compoonents = determine_num_components(curr_data_set, X_train, y_train, X_train_lfm, y_train_lfm, n_classes)
+        setup_projections(X_train, X_train_lfm, y_train_lfm,
+                          pca_components, ica_compoonents, rand_components, lfm_components)
 
-    rand_components = ica_compoonents
-    lfm_components = ica_compoonents
+        # get_best_k(X_train, y_train, y_train_lfm, n_classes)
+        # exit(0)
 
-    setup_projections(X_train, X_train_lfm, y_train_lfm,
-                      pca_components, ica_compoonents, rand_components, lfm_components)
+        if curr_data_set == 'forest':
+            n_classes = 3
+        if curr_data_set == 'faces':
+            n_classes = 7
+        do_k_means(X_train, y_train, y_train_lfm, n_classes)
+        do_em(X_train, y_train, y_train_lfm, n_classes)
 
-    do_k_means(X_train, y_train, y_train_lfm, n_classes)
-    do_em(X_train, y_train, y_train_lfm, n_classes)
-
-    do_nn(curr_data_set, X_train, y_train, X_test, y_test,
-          pca_components, ica_compoonents, rand_components, lfm_components)
+        do_nn(curr_data_set, X_train, y_train, X_test, y_test,
+              pca_components, ica_compoonents, rand_components, lfm_components)
 
 
 def get_the_data(dataset):
